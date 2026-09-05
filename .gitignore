@@ -1,0 +1,4 @@
+build/
+include/kernel/arch-current
+
+.gdb_history

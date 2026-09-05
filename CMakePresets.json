@@ -1,0 +1,26 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    { "name": "riscv64-debug", "inherits": "base", "cacheVariables": { "OS_ARCH": "riscv64" } },
+    { "name": "aarch64-debug", "inherits": "base", "cacheVariables": { "OS_ARCH": "aarch64" } },
+    { "name": "x86_64-debug", "inherits": "base", "cacheVariables": { "OS_ARCH": "x86_64" } },
+    { "name": "riscv64-release", "inherits": "riscv64-debug", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
+    { "name": "aarch64-release", "inherits": "aarch64-debug", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
+    { "name": "x86_64-release", "inherits": "x86_64-debug", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } }
+  ],
+  "buildPresets": [
+    { "name": "riscv64-debug", "configurePreset": "riscv64-debug" },
+    { "name": "aarch64-debug", "configurePreset": "aarch64-debug" },
+    { "name": "x86_64-debug", "configurePreset": "x86_64-debug" },
+    { "name": "riscv64-release", "configurePreset": "riscv64-release" },
+    { "name": "aarch64-release", "configurePreset": "aarch64-release" },
+    { "name": "x86_64-release", "configurePreset": "x86_64-release" }
+  ]
+}

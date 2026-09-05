@@ -1,0 +1,31 @@
+# Clang's integrated assembler uses GAS directives, including on x86 when
+# Intel instruction syntax is selected. RISC-V is the current development target.
+[default_config]
+assembler = "gas"
+instruction_set = "riscv"
+
+[default_config.opts]
+compiler = "clang"
+diagnostics = true
+default_diagnostics = false
+# Explicit flags because asm-lsp does not discover CMake's nested preset
+# build directories. Keep these in sync with the RISC-V CMake configuration.
+# Paths are relative to the repository root; start the language server there.
+compile_flags_txt = [
+  "--target=riscv64-unknown-elf",
+  "-x",
+  "assembler-with-cpp",
+  "-integrated-as",
+  "-march=rv64imac",
+  "-mabi=lp64",
+  "-mcmodel=medany",
+  "-mno-relax",
+  "-ffreestanding",
+  "-fno-pic",
+  "-fno-pie",
+  "-nostdlibinc",
+  "-g",
+  "-Ikernel/include",
+  "-Ikernel/arch/riscv64/include",
+  "-Ibuild/riscv64-debug/generated/include",
+]
