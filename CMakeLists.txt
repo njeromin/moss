@@ -22,8 +22,15 @@ if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" OR
 endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+add_subdirectory(common)
+
 add_library(kernel_options INTERFACE)
+string(TOUPPER "${OS_ARCH}" OS_ARCH_DEFINE_SUFFIX)
+target_compile_definitions(kernel_options INTERFACE
+    "KERNEL_ARCH_${OS_ARCH_DEFINE_SUFFIX}=1"
+    "KERNEL_ARCH_NAME=\"${OS_ARCH}\"")
 target_compile_features(kernel_options INTERFACE c_std_11)
+target_link_libraries(kernel_options INTERFACE common)
 target_include_directories(kernel_options INTERFACE
     "${PROJECT_SOURCE_DIR}/kernel/include"
     "${PROJECT_SOURCE_DIR}/kernel/arch/${OS_ARCH}/include"
@@ -48,6 +55,7 @@ elseif(OS_ARCH STREQUAL "aarch64")
 endif()
 
 add_subdirectory(kernel)
+add_subdirectory(userspace)
 
 option(OS_BUILD_CHECKS "Build a freestanding C/assembly toolchain check" OFF)
 if(OS_BUILD_CHECKS)

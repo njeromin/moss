@@ -23,6 +23,11 @@ SECTIONS {
         *(.text .text.*)
     } :text
     .rodata ALIGN(4096) : AT(ADDR(.rodata) - KERNEL_VMA + KERNEL_LMA) {
+        /* Store values in high memory so medany C can read the physical base. */
+        kernel_virtual_base = .;
+        QUAD(KERNEL_VMA)
+        kernel_physical_base = .;
+        QUAD(KERNEL_LMA)
         *(.rodata .rodata.* .srodata .srodata.*)
     } :rodata
     .data ALIGN(4096) : AT(ADDR(.data) - KERNEL_VMA + KERNEL_LMA) {

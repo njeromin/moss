@@ -7,6 +7,7 @@ endif()
 
 set(linker_script "${CMAKE_CURRENT_SOURCE_DIR}/arch/${OS_ARCH}/linker.ld")
 if(KERNEL_SOURCES)
+    list(APPEND KERNEL_SOURCES core/kmain.c core/console.c core/memory/pmm.c)
     if(EXISTS "${linker_script}")
         add_executable(kernel ${KERNEL_SOURCES})
         set_target_properties(kernel PROPERTIES SUFFIX .elf
@@ -17,6 +18,10 @@ if(KERNEL_SOURCES)
         message(FATAL_ERROR "Missing architecture linker script: ${linker_script}")
     endif()
     target_link_libraries(kernel PRIVATE kernel_options)
+    # Headers private to the selected architecture implementation, such as
+    # riscv64/sbi.h, are not part of the shared kernel include interface.
+    target_include_directories(kernel PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/arch/${OS_ARCH}")
     if(OS_ARCH STREQUAL "riscv64")
         foreach(mode IN ITEMS run debug)
             add_custom_target(${mode}

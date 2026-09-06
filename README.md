@@ -47,6 +47,11 @@ assembly for other architectures; the current default is RISC-V.
 Requires CMake 3.25+, Ninja, Clang with RISC-V/AArch64/x86 backends, and LLD.
 Clang compiles both C and assembly; no NASM or separate GNU assembler is needed.
 
+The selected architecture is exported to kernel C and preprocessed assembly as
+one feature macro, such as `KERNEL_ARCH_RISCV64`, plus the string macro
+`KERNEL_ARCH_NAME`. Use the feature macro for conditional code; compiler-provided
+macros such as `__riscv` remain available for instruction-set details.
+
 ```sh
 cmake --preset riscv64-debug
 cmake --build --preset riscv64-debug
