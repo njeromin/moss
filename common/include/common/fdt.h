@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define FDT_BEGIN_NODE 0x1 /* Start node: full name */
 #define FDT_END_NODE 0x2   /* End node */
@@ -24,6 +24,10 @@ struct fdt_header {
   uint32_t size_dt_struct;
 };
 
+struct fdt_node {
+  uint32_t offset;
+};
+
 struct fdt_reserve_entry {
   uint64_t address;
   uint64_t size;
@@ -34,5 +38,28 @@ struct fdt_property {
   uint32_t nameoff;
 };
 
-// The caller must ensure the complete FDT totalsize region is readable.
-int fdt_validate(const void *dtb_blob);
+// Check the header and all block ranges described by the header.
+int fdt_check_header(const void* dtb_blob);
+
+// Check the complete tree. blob_size is the mapped/readable buffer bound.
+int fdt_check_full(const void* dtb_blob, size_t blob_size);
+
+int fdt_root(const void* blob, struct fdt_node* node);
+
+int fdt_first_child(const void* blob, const struct fdt_node* parent,
+                    struct fdt_node* child);
+
+int fdt_next_sibling(const void* blob, const struct fdt_node* node,
+                     struct fdt_node* sibling);
+
+int fdt_get_property(const void* blob, const struct fdt_node* node,
+                     const char* name, const void** data, size_t* size);
+
+int fdt_property_u32(const void *blob, const struct fdt_node *node,
+                     const char *name, uint32_t *value);
+int fdt_property_u64(const void *blob, const struct fdt_node *node,
+                     const char *name, uint64_t *value);
+int fdt_property_i32(const void *blob, const struct fdt_node *node,
+                     const char *name, int32_t *value);
+int fdt_property_i64(const void *blob, const struct fdt_node *node,
+                     const char *name, int64_t *value);
