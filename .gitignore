@@ -2,3 +2,6 @@ build/
 include/kernel/arch-current
 
 .gdb_history
+
+.cache/
+tests/.cache/
