@@ -1,5 +1,6 @@
 #include <core/kmain.h>
 
+#include "core/panic.h"
 #include "sbi.h"
 #include <arch/memory/layout.h>
 #include <common/fdt.h>
@@ -20,8 +21,10 @@ void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr) {
     dtb_size = 0;
   }
   if (fdt_check_full((const void*)dtb_ptr, dtb_size) != 0) {
-    console_log(_CONSOLE_LOG_SUBJECT, "DTB failed validation.\n");
+    kpanic("Failed to validate DTB.\n");
   }
+
+  console_log(_CONSOLE_LOG_SUBJECT, "Verified DTB.\n");
 
   struct entry_info entry_info = {
       .device_discovery =

@@ -28,12 +28,16 @@ SECTIONS {
         QUAD(KERNEL_VMA)
         kernel_physical_base = .;
         QUAD(KERNEL_LMA)
+        kernel_physical_start = .;
+        QUAD(KERNEL_LMA)
         *(.rodata .rodata.* .srodata .srodata.*)
     } :rodata
     .data ALIGN(4096) : AT(ADDR(.data) - KERNEL_VMA + KERNEL_LMA) {
         *(.data .data.*)
         PROVIDE(__global_pointer$ = . + 0x800);
         *(.sdata .sdata.*)
+        kernel_physical_end = .;
+        QUAD(kernel_end - KERNEL_VMA + KERNEL_LMA)
     } :data
     .bss ALIGN(4096) (NOLOAD) : AT(ADDR(.bss) - KERNEL_VMA + KERNEL_LMA) {
         bss_start = .;

@@ -52,8 +52,20 @@ int fdt_first_child(const void* blob, const struct fdt_node* parent,
 int fdt_next_sibling(const void* blob, const struct fdt_node* node,
                      struct fdt_node* sibling);
 
+int fdt_node_name(const void *blob, const struct fdt_node *node,
+                  const char **name, size_t *size);
+int fdt_node_name_is(const void *blob, const struct fdt_node *node,
+                     const char *name);
+
 int fdt_get_property(const void* blob, const struct fdt_node* node,
                      const char* name, const void** data, size_t* size);
+
+// Return a single NUL-terminated string property, excluding its terminator.
+int fdt_property_string(const void *blob, const struct fdt_node *node,
+                        const char *property, const char **value,
+                        size_t *size);
+int fdt_property_string_is(const void *blob, const struct fdt_node *node,
+                           const char *property, const char *expected);
 
 int fdt_property_u32(const void *blob, const struct fdt_node *node,
                      const char *name, uint32_t *value);

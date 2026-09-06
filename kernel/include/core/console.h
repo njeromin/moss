@@ -1,5 +1,7 @@
 #pragma once
 
-void console_write(const char* string);
+#include <stdarg.h>
 
-void console_log(const char* subject, const char* message);
+void console_vwrite(const char* format, va_list args);
+void console_write(const char* format, ...);
+void console_log(const char* subject, const char* format, ...);
