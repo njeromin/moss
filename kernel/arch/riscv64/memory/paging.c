@@ -109,7 +109,40 @@ int arch_paging_create_space(phys_addr_t* out_root) {
   return PAGING_OK;
 }
 
-void arch_paging_destroy_space(phys_addr_t root) {}
+void arch_paging_destroy_space(phys_addr_t root) {
+  if (root == 0 || root == master_kernel_root) {
+    return;
+  }
+
+  uint64_t* table2 = (uint64_t*)root;
+
+  // Only free user mappings (slots 0..255). Never touch shared kernel slots (256..511).
+  for (size_t idx2 = 0; idx2 < SV39_USER_ENTRIES; idx2++) {
+    uint64_t pte2 = table2[idx2];
+    if (!(pte2 & PTE_VALID) || (pte2 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
+      continue;
+    }
+
+    phys_addr_t table1_phys = pte_to_phys(pte2);
+    uint64_t* table1 = (uint64_t*)table1_phys;
+
+    for (size_t idx1 = 0; idx1 < SV39_ROOT_ENTRIES; idx1++) {
+      uint64_t pte1 = table1[idx1];
+      if (!(pte1 & PTE_VALID) ||
+          (pte1 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
+        continue;
+      }
+
+      phys_addr_t table0_phys = pte_to_phys(pte1);
+      pmm_free(table0_phys, 1);
+    }
+
+    pmm_free(table1_phys, 1);
+  }
+
+  pmm_free(root, 1);
+  arch_paging_flush_all();
+}
 
 void arch_paging_switch_space(phys_addr_t root, size_t space_id) {
   uint64_t satp_val =
@@ -161,18 +194,61 @@ int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
   return PAGING_OK;
 }
 
+static inline int is_table_empty(const uint64_t* table) {
+  for (size_t i = 0; i < SV39_ROOT_ENTRIES; i++) {
+    if (table[i] != 0) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
   if ((virt & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
 
-  uint64_t* pte = walk(root, virt, 0);
-  if (pte == NULL || !(*pte & PTE_VALID)) {
+  uint64_t* table2 = (uint64_t*)root;
+  size_t idx2 = vpn(virt, 2);
+  uint64_t pte2 = table2[idx2];
+  if (!(pte2 & PTE_VALID) || (pte2 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
     return PAGING_ERR_NOT_MAPPED;
   }
 
-  *pte = 0;
+  phys_addr_t table1_phys = pte_to_phys(pte2);
+  uint64_t* table1 = (uint64_t*)table1_phys;
+  size_t idx1 = vpn(virt, 1);
+  uint64_t pte1 = table1[idx1];
+  if (!(pte1 & PTE_VALID) || (pte1 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
+  phys_addr_t table0_phys = pte_to_phys(pte1);
+  uint64_t* table0 = (uint64_t*)table0_phys;
+  size_t idx0 = vpn(virt, 0);
+  uint64_t pte0 = table0[idx0];
+  if (!(pte0 & PTE_VALID)) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
+  // 1. Clear the leaf 4 KiB entry and invalidate the TLB for this virtual address
+  table0[idx0] = 0;
   arch_paging_flush_page(virt);
+
+  // 2. Prune Level 0 table if it has no remaining entries
+  if (is_table_empty(table0)) {
+    table1[idx1] = 0;
+    pmm_free(table0_phys, 1);
+
+    // 3. Prune Level 1 table if empty (never prune shared kernel entries in user spaces)
+    int is_shared_kernel_slot =
+        (root != master_kernel_root) && (idx2 >= SV39_USER_ENTRIES);
+    if (!is_shared_kernel_slot && is_table_empty(table1)) {
+      table2[idx2] = 0;
+      pmm_free(table1_phys, 1);
+    }
+  }
+
   return PAGING_OK;
 }
 
