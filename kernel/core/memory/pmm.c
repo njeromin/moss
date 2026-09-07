@@ -7,6 +7,21 @@
 
 static struct pmm_ctx pmm;
 
+static enum pmm_frame_state frame_state(const uint8_t* bitmap,
+                                        size_t frame) {
+  size_t bit = frame * 2;
+  return (enum pmm_frame_state)((bitmap[bit / 8] >> (bit % 8)) & 3u);
+}
+
+static void set_frame_state(uint8_t* bitmap, size_t frame,
+                            enum pmm_frame_state state) {
+  size_t bit = frame * 2;
+  uint8_t shift = (uint8_t)(bit % 8);
+  uint8_t mask = (uint8_t)(3u << shift);
+  bitmap[bit / 8] = (uint8_t)((bitmap[bit / 8] & (uint8_t)~mask) |
+                              ((uint8_t)state << shift));
+}
+
 static int emit_pmm_region(uintptr_t addr_start, uintptr_t addr_end) {
   size_t frame_count;
   size_t bitmap_size;
@@ -19,7 +34,7 @@ static int emit_pmm_region(uintptr_t addr_start, uintptr_t addr_end) {
   }
 
   frame_count = (addr_end - addr_start) / PMM_FRAME_SIZE;
-  bitmap_size = (frame_count + 7) / 8;
+  bitmap_size = (frame_count + 3) / 4;
   bitmap = boot_alloc(pmm.boot_allocator, bitmap_size, 1);
   if (bitmap == 0) {
     return -1;
@@ -36,7 +51,7 @@ static int emit_pmm_region(uintptr_t addr_start, uintptr_t addr_end) {
 }
 
 static int pmm_region_reserve(struct pmm_region* region, uintptr_t start,
-                              uintptr_t end) {
+                              uintptr_t end, enum pmm_frame_state state) {
   uintptr_t region_end;
   uintptr_t overlap_start;
   uintptr_t overlap_end;
@@ -44,6 +59,8 @@ static int pmm_region_reserve(struct pmm_region* region, uintptr_t start,
   size_t last_frame;
 
   if (region == 0 || start >= end ||
+      (state != PMM_FRAME_RESERVED &&
+       state != PMM_FRAME_RESERVED_RECLAIMABLE) ||
       region->frame_count > (UINTPTR_MAX - region->base) / PMM_FRAME_SIZE) {
     return -1;
   }
@@ -56,9 +73,8 @@ static int pmm_region_reserve(struct pmm_region* region, uintptr_t start,
 
   first_frame = (overlap_start - region->base) / PMM_FRAME_SIZE;
   last_frame = (overlap_end - region->base) / PMM_FRAME_SIZE;
-  for (size_t frame = first_frame; frame < last_frame; ++frame) {
-    region->bitmap[frame / 8] |= (uint8_t)(1u << (frame % 8));
-  }
+  for (size_t frame = first_frame; frame < last_frame; ++frame)
+    set_frame_state(region->bitmap, frame, state);
   return 0;
 }
 
@@ -123,7 +139,12 @@ int pmm_init(const struct memory_map* memory_map,
       reserved_end = reserved.offset + reserved.size;
       reserved_start = align_down(reserved.offset, PMM_FRAME_SIZE);
       reserved_end = align_up(reserved_end, PMM_FRAME_SIZE);
-      if (pmm_region_reserve(region, reserved_start, reserved_end) != 0) {
+      enum pmm_frame_state state =
+          (reserved.flags & MEMORY_REGION_REUSABLE)
+              ? PMM_FRAME_RESERVED_RECLAIMABLE
+              : PMM_FRAME_RESERVED;
+      if (pmm_region_reserve(region, reserved_start, reserved_end, state) !=
+          0) {
         return -1;
       }
     }
@@ -141,9 +162,7 @@ static int find_free_run(const struct pmm_region* region,
   }
 
   for (size_t frame = 0; frame < region->frame_count; ++frame) {
-    size_t byte = frame / 8;
-    uint8_t mask = (uint8_t)(1u << (frame % 8));
-    int allocated = (region->bitmap[byte] & mask) != 0;
+    int allocated = frame_state(region->bitmap, frame) != PMM_FRAME_FREE;
 
     if (!allocated) {
       if (run_length == 0) {
@@ -180,7 +199,7 @@ int pmm_alloc(size_t frames, uintptr_t* out_ptr) {
     }
 
     for (size_t frame = first_frame; frame < first_frame + frames; ++frame) {
-      region->bitmap[frame / 8] |= (uint8_t)(1u << (frame % 8));
+      set_frame_state(region->bitmap, frame, PMM_FRAME_ALLOCATED);
     }
 
     *out_ptr = region->base + first_frame * PMM_FRAME_SIZE;
@@ -232,17 +251,14 @@ int pmm_free(uintptr_t base, size_t frames) {
 
   for (size_t i = 0; i < frames; ++i) {
     size_t frame = first_frame + i;
-    size_t byte = frame / 8;
-    uint8_t mask = (uint8_t)(1u << (frame % 8));
-
-    if ((region->bitmap[byte] & mask) == 0) {
+    if (frame_state(region->bitmap, frame) != PMM_FRAME_ALLOCATED) {
       return -1;  // Already free
     }
   }
 
   for (size_t i = 0; i < frames; ++i) {
     size_t frame = first_frame + i;
-    region->bitmap[frame / 8] &= (uint8_t)~(1u << (frame % 8));
+    set_frame_state(region->bitmap, frame, PMM_FRAME_FREE);
   }
 
   return 0;

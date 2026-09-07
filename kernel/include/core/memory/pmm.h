@@ -7,6 +7,13 @@
 // TODO: Ensure this is the same size as the smallest page in the current architecture.
 #define PMM_FRAME_SIZE 4096
 
+enum pmm_frame_state {
+  PMM_FRAME_FREE = 0,
+  PMM_FRAME_ALLOCATED = 1,
+  PMM_FRAME_RESERVED = 2,
+  PMM_FRAME_RESERVED_RECLAIMABLE = 3,
+};
+
 struct pmm_region {
   uintptr_t base;
   size_t frame_count;
