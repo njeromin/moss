@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef uintptr_t phys_addr_t;
@@ -12,23 +13,37 @@ enum page_permissions {
   PAGE_USER = 1u << 3,
 };
 
-/* Allocate a zeroed, kernel-accessible page-table frame.
-     Both addresses must refer to the same frame. */
-struct page_table_allocator {
-  int (*alloc)(phys_addr_t* phys, void** writable);
-  void (*free)(phys_addr_t phys);
-  void* (*access)(phys_addr_t phys);
+enum paging_result {
+  PAGING_OK = 0,
+  PAGING_ERR_NOMEM = -1,
+  PAGING_ERR_ALREADY_MAPPED = -2,
+  PAGING_ERR_NOT_MAPPED = -3,
+  PAGING_ERR_INVALID_ALIGNMENT = -4,
+  PAGING_ERR_INVALID_ARG = -5,
 };
 
-int arch_paging_init(const struct page_table_allocator* allocator);
+// Create a new address space root table with shared kernel mappings copied in.
+int arch_paging_create_space(phys_addr_t* out_root);
 
-/* Map/unmap one base page in the kernel address space. */
-int arch_paging_map(virt_addr_t virt, phys_addr_t phys, unsigned permissions);
-int arch_paging_unmap(virt_addr_t virt);
+// Free an address space and its non-kernel intermediate page tables.
+void arch_paging_destroy_space(phys_addr_t root);
 
-/* Accepts an address with a page offset; returns its translation. */
-int arch_paging_query(virt_addr_t virt, phys_addr_t* phys,
-                      unsigned* permissions);
+// Switch the hardware MMU to the given root (e.g. writes satp on RISC-V).
+void arch_paging_switch_space(phys_addr_t root, size_t space_id);
 
-/* Activate the kernel tables built by this backend. */
-void arch_paging_activate(void);
+/* Map one base 4KiB page in the specified root page table. */
+int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                    unsigned permissions);
+
+// Unmap one base 4KiB page and flush TLB.
+int arch_paging_unmap(phys_addr_t root, virt_addr_t virt);
+
+// Query translation and permissions for a virtual address.
+int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
+                      unsigned* out_permissions);
+
+// Invalidate the TLB entry for a single page (used after unmap or permission change)
+void arch_paging_flush_page(virt_addr_t virt);
+
+// Invalidate all TLB entries (used when switching address spaces or tearing down a space)
+void arch_paging_flush_all(void);

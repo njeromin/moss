@@ -7,6 +7,7 @@
 // Translate an address in the fixed higher-half kernel mapping. The selected
 // architecture supplies the implementation; this does not walk page tables.
 uintptr_t arch_kernel_virt_to_phys(uintptr_t virt);
+uintptr_t arch_kernel_phys_to_virt(uintptr_t phys);
 
 // Writable identity-mapped range usable by the early allocator.
 struct memory_region arch_boot_alloc_window(void);
