@@ -10,6 +10,16 @@ static int add_available(struct memory_map* memory_map,
   }
 
   memory_map->available[memory_map->available_count++] = region;
+
+  if (region.offset < memory_map->min_phys_addr) {
+    memory_map->min_phys_addr = region.offset;
+  }
+
+  size_t end = region.offset + region.size;
+  if (end > memory_map->max_phys_addr) {
+    memory_map->max_phys_addr = end;
+  }
+
   return 0;
 }
 
@@ -20,6 +30,16 @@ static int add_reserved(struct memory_map* memory_map,
   }
 
   memory_map->reserved[memory_map->reserved_count++] = region;
+
+  if (region.offset < memory_map->min_phys_addr) {
+    memory_map->min_phys_addr = region.offset;
+  }
+
+  size_t end = region.offset + region.size;
+  if (end > memory_map->max_phys_addr) {
+    memory_map->max_phys_addr = end;
+  }
+
   return 0;
 }
 
@@ -175,6 +195,8 @@ int arch_get_memory_map(
 
   memory_map->available_count = 0;
   memory_map->reserved_count = 0;
+  memory_map->min_phys_addr = SIZE_MAX;
+  memory_map->max_phys_addr = 0;
 
   if (memory_map_kernel(memory_map) != ARCH_MEMORY_MAP_OK) {
     // TODO: Change this, this is handling error wrong.

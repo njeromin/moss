@@ -87,6 +87,14 @@ void console_vwrite(const char* format, va_list args) {
       case 'u':
         stdout_unsigned(&output, (uintmax_t)va_arg(args, unsigned), 10);
         break;
+      case 'x':
+        stdout_unsigned(&output, (uintmax_t)va_arg(args, unsigned), 16);
+        break;
+      case 'p':
+        stdout_string(&output, "0x");
+        stdout_unsigned(&output, (uintmax_t)(uintptr_t)va_arg(args, void *),
+                        16);
+        break;
       case '\0':
         stdout_putc(&output, '%');
         stdout_flush(&output);

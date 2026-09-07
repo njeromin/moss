@@ -294,19 +294,21 @@ int fdt_next_sibling(const void* blob, const struct fdt_node* node,
 int fdt_node_name(const void* blob, const struct fdt_node* node,
                   const char** name, size_t* size) {
   struct fdt_view view;
-  uint32_t next;
+  uint32_t next, name_offset;
   size_t length;
   if (name == 0 || size == 0 || fdt_view_init(blob, &view) != 0 ||
       fdt_node_begin(&view, node, &next) != 0) {
     return -1;
   }
-  if (next > view.struct_size ||
-      string_length_bounded((const char*)(view.structure + next),
-                            view.struct_size - next, &length) != 0) {
+  if (node->offset > view.struct_size - 4) return -1;
+  name_offset = node->offset + 4;
+  if (name_offset > view.struct_size ||
+      string_length_bounded((const char*)(view.structure + name_offset),
+                            view.struct_size - name_offset, &length) != 0) {
     return -1;
   }
-  *name = (const char*)(view.structure + next);
-  *size = length;
+  *name = (const char*)(view.structure + name_offset);
+  *size = length - 1;
   return 0;
 }
 
@@ -367,13 +369,14 @@ int fdt_property_string(const void* blob, const struct fdt_node* node,
                         const char* property, const char** value,
                         size_t* size) {
   const void* data;
-  size_t length;
+  size_t length, string_length;
   if (value == 0 || size == 0 ||
       fdt_get_property(blob, node, property, &data, &length) != 0 ||
-      string_length_bounded((const char*)data, length, size) != 0 ||
-      *size + 1 != length) {
+      string_length_bounded((const char*)data, length, &string_length) != 0 ||
+      string_length == 0 || string_length != length) {
     return -1;
   }
+  *size = string_length - 1;
   *value = (const char*)data;
   return 0;
 }

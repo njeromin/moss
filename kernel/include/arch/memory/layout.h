@@ -26,6 +26,11 @@ struct memory_map {
   struct memory_region* reserved;
   size_t reserved_capacity;
   size_t reserved_count;
+
+  // The highest physical address found.
+  size_t max_phys_addr;
+  // The smallest physical address found.
+  size_t min_phys_addr;
 };
 
 int arch_get_memory_map(

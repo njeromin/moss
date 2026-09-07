@@ -1,7 +1,7 @@
 # Code in this directory is written to be usable by both the kernel and
 # userspace. Keep it freestanding: no kernel services and no libc dependency.
 add_library(common STATIC
-    endian.c fdt.c strings.c
+    endian.c fdt.c strings.c memory.c maths.c
 )
 target_include_directories(common PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")

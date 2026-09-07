@@ -48,6 +48,11 @@ SECTIONS {
         . += 16384;
         stack_top = .;
     } :data
+    .boot_alloc ALIGN(4096) (NOLOAD) : AT(ADDR(.boot_alloc) - KERNEL_VMA + KERNEL_LMA) {
+        boot_allocator_start = .;
+        . += 65536;
+        boot_allocator_end = .;
+    } :data
     kernel_end = .;
     ASSERT(kernel_end - KERNEL_VMA <= 0x200000,
            "Kernel exceeds initial 2 MiB higher-half mapping")
