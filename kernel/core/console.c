@@ -74,6 +74,12 @@ void console_vwrite(const char* format, va_list args) {
     }
 
     ++format;
+    if (*format == 'z' && (format[1] == 'u' || format[1] == 'x')) {
+      stdout_unsigned(&output, (uintmax_t)va_arg(args, size_t),
+                      format[1] == 'x' ? 16 : 10);
+      format += 2;
+      continue;
+    }
     switch (*format) {
       case '%':
         stdout_putc(&output, '%');

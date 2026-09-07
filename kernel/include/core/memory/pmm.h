@@ -1,6 +1,6 @@
 #pragma once
 
-#include "arch/memory/layout.h"
+#include <arch/memory/layout.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -20,15 +20,23 @@ struct pmm_region {
   uint8_t* bitmap;
 };
 
+enum pmm_result {
+  PMM_OK = 0,
+  PMM_ERROR = -1,
+  PMM_ERROR_INVALID_INPUT = -2,
+  PMM_ERROR_NO_FREE_FRAME = -3,
+  PMM_ERROR_ALREADY_FREE = -4,
+  PMM_ERROR_INVALID_REGIONS = -5,
+  PMM_ERROR_CANT_EMIT_REGION = -6,
+};
+
 struct pmm_ctx {
   struct pmm_region* regions;
   size_t region_count;
   size_t region_capacity;
-  struct boot_allocator* boot_allocator;
 };
 
-int pmm_init(const struct memory_map* memory_map,
-             struct boot_allocator* boot_allocator);
+enum pmm_result pmm_init(void);
 
-int pmm_alloc(size_t frames, uintptr_t* out_ptr);
-int pmm_free(uintptr_t base, size_t frames);
+enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr);
+enum pmm_result pmm_free(uintptr_t base, size_t frames);

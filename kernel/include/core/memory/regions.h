@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define MAX_MEMORY_REGIONS 64
+
 enum memory_region_flags {
   MEMORY_REGION_RESERVED = 1u << 0,
   MEMORY_REGION_NO_MAP = 1u << 1,

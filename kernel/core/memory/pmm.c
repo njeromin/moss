@@ -7,8 +7,7 @@
 
 static struct pmm_ctx pmm;
 
-static enum pmm_frame_state frame_state(const uint8_t* bitmap,
-                                        size_t frame) {
+static enum pmm_frame_state frame_state(const uint8_t* bitmap, size_t frame) {
   size_t bit = frame * 2;
   return (enum pmm_frame_state)((bitmap[bit / 8] >> (bit % 8)) & 3u);
 }
@@ -18,8 +17,8 @@ static void set_frame_state(uint8_t* bitmap, size_t frame,
   size_t bit = frame * 2;
   uint8_t shift = (uint8_t)(bit % 8);
   uint8_t mask = (uint8_t)(3u << shift);
-  bitmap[bit / 8] = (uint8_t)((bitmap[bit / 8] & (uint8_t)~mask) |
-                              ((uint8_t)state << shift));
+  bitmap[bit / 8] =
+      (uint8_t)((bitmap[bit / 8] & (uint8_t)~mask) | ((uint8_t)state << shift));
 }
 
 static int emit_pmm_region(uintptr_t addr_start, uintptr_t addr_end) {
@@ -35,7 +34,7 @@ static int emit_pmm_region(uintptr_t addr_start, uintptr_t addr_end) {
 
   frame_count = (addr_end - addr_start) / PMM_FRAME_SIZE;
   bitmap_size = (frame_count + 3) / 4;
-  bitmap = boot_alloc(pmm.boot_allocator, bitmap_size, 1);
+  bitmap = boot_alloc(bitmap_size, 1);
   if (bitmap == 0) {
     return -1;
   }
@@ -73,36 +72,38 @@ static int pmm_region_reserve(struct pmm_region* region, uintptr_t start,
 
   first_frame = (overlap_start - region->base) / PMM_FRAME_SIZE;
   last_frame = (overlap_end - region->base) / PMM_FRAME_SIZE;
-  for (size_t frame = first_frame; frame < last_frame; ++frame)
-    set_frame_state(region->bitmap, frame, state);
+  for (size_t frame = first_frame; frame < last_frame; ++frame) {
+    if (frame_state(region->bitmap, frame) != PMM_FRAME_RESERVED) {
+      set_frame_state(region->bitmap, frame, state);
+    }
+  }
   return 0;
 }
 
-int pmm_init(const struct memory_map* memory_map,
-             struct boot_allocator* boot_allocator) {
+enum pmm_result pmm_init(void) {
+  const struct memory_map* memory_map = boot_alloc_memory_map();
   pmm.regions = NULL;
   pmm.region_count = 0;
   pmm.region_capacity = 0;
-  pmm.boot_allocator = boot_allocator;
 
   size_t region_capacity;
 
-  if (memory_map == 0 || pmm.boot_allocator == 0) {
-    return -1;
+  if (memory_map == 0) {
+    return PMM_ERROR_INVALID_INPUT;
   }
   region_capacity = memory_map->available_count;
   if (region_capacity == 0) {
-    return 0;
+    return PMM_ERROR_INVALID_REGIONS;
   }
   if (region_capacity > SIZE_MAX / sizeof(*pmm.regions)) {
-    return -1;
+    return PMM_ERROR_INVALID_REGIONS;
   }
 
   pmm.regions =
-      boot_alloc(pmm.boot_allocator, sizeof(*pmm.regions) * region_capacity,
+      boot_alloc(sizeof(*pmm.regions) * region_capacity,
                  _Alignof(struct pmm_region));
   if (pmm.regions == 0) {
-    return -1;
+    return PMM_ERROR_INVALID_REGIONS;
   }
   pmm.region_count = 0;
   pmm.region_capacity = region_capacity;
@@ -116,49 +117,59 @@ int pmm_init(const struct memory_map* memory_map,
     uintptr_t end;
 
     if (available.size > UINTPTR_MAX - available.offset) {
-      return -1;
+      return PMM_ERROR_INVALID_INPUT;
     }
     available_end = available.offset + available.size;
+    if (available.offset > UINTPTR_MAX - (PMM_FRAME_SIZE - 1)) continue;
     start = align_up(available.offset, PMM_FRAME_SIZE);
     end = align_down(available_end, PMM_FRAME_SIZE);
     if (start >= end) {
       continue;
     }
     if (emit_pmm_region(start, end) != 0) {
-      return -1;
+      return PMM_ERROR_CANT_EMIT_REGION;
     }
 
-    struct pmm_region* region = &pmm.regions[pmm.region_count - 1];
+  }
+
+  // All metadata must be reserved before any bitmap consumes the map.
+  boot_alloc_finish();
+  for (size_t i = 0; i < pmm.region_count; ++i) {
+    struct pmm_region* region = &pmm.regions[i];
     for (size_t j = 0; j < memory_map->reserved_count; ++j) {
       struct memory_region reserved = memory_map->reserved[j];
       uintptr_t reserved_end;
       uintptr_t reserved_start;
       if (reserved.size > UINTPTR_MAX - reserved.offset) {
-        return -1;
+        return PMM_ERROR_INVALID_INPUT;
       }
+      if (reserved.size == 0) continue;
       reserved_end = reserved.offset + reserved.size;
+      if (reserved_end > UINTPTR_MAX - (PMM_FRAME_SIZE - 1)) {
+        return PMM_ERROR_INVALID_INPUT;
+      }
       reserved_start = align_down(reserved.offset, PMM_FRAME_SIZE);
       reserved_end = align_up(reserved_end, PMM_FRAME_SIZE);
-      enum pmm_frame_state state =
-          (reserved.flags & MEMORY_REGION_REUSABLE)
-              ? PMM_FRAME_RESERVED_RECLAIMABLE
-              : PMM_FRAME_RESERVED;
+      enum pmm_frame_state state = (reserved.flags & MEMORY_REGION_REUSABLE)
+                                       ? PMM_FRAME_RESERVED_RECLAIMABLE
+                                       : PMM_FRAME_RESERVED;
       if (pmm_region_reserve(region, reserved_start, reserved_end, state) !=
           0) {
-        return -1;
+        return PMM_ERROR_CANT_EMIT_REGION;  // Probably the wrong error?
       }
     }
   }
   return 0;
 }
 
-static int find_free_run(const struct pmm_region* region,
-                         size_t requested_frames, size_t* first_frame) {
+static enum pmm_result find_free_run(const struct pmm_region* region,
+                                     size_t requested_frames,
+                                     size_t* first_frame) {
   size_t run_start = 0;
   size_t run_length = 0;
 
   if (region == 0 || requested_frames == 0) {
-    return -1;
+    return PMM_ERROR_INVALID_INPUT;
   }
 
   for (size_t frame = 0; frame < region->frame_count; ++frame) {
@@ -180,12 +191,12 @@ static int find_free_run(const struct pmm_region* region,
     }
   }
 
-  return -1;
+  return PMM_ERROR_NO_FREE_FRAME;
 }
 
-int pmm_alloc(size_t frames, uintptr_t* out_ptr) {
+enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr) {
   if (out_ptr == 0 || frames == 0) {
-    return -1;
+    return PMM_ERROR_INVALID_INPUT;
   }
 
   *out_ptr = 0;
@@ -194,7 +205,7 @@ int pmm_alloc(size_t frames, uintptr_t* out_ptr) {
     struct pmm_region* region = &pmm.regions[i];
     size_t first_frame;
 
-    if (find_free_run(region, frames, &first_frame) != 0) {
+    if (find_free_run(region, frames, &first_frame) != PMM_OK) {
       continue;
     }
 
@@ -203,10 +214,10 @@ int pmm_alloc(size_t frames, uintptr_t* out_ptr) {
     }
 
     *out_ptr = region->base + first_frame * PMM_FRAME_SIZE;
-    return 0;
+    return PMM_OK;
   }
 
-  return -1;
+  return PMM_ERROR_NO_FREE_FRAME;
 }
 
 static struct pmm_region* find_region(uintptr_t base, size_t frames) {
@@ -237,14 +248,14 @@ static struct pmm_region* find_region(uintptr_t base, size_t frames) {
   return 0;
 }
 
-int pmm_free(uintptr_t base, size_t frames) {
+enum pmm_result pmm_free(uintptr_t base, size_t frames) {
   if ((base % PMM_FRAME_SIZE) != 0) {
-    return -1;
+    return PMM_ERROR_INVALID_INPUT;
   }
 
   struct pmm_region* region = find_region(base, frames);
   if (region == 0) {
-    return -1;
+    return PMM_ERROR_INVALID_INPUT;
   }
 
   size_t first_frame = (base - region->base) / PMM_FRAME_SIZE;
@@ -252,7 +263,7 @@ int pmm_free(uintptr_t base, size_t frames) {
   for (size_t i = 0; i < frames; ++i) {
     size_t frame = first_frame + i;
     if (frame_state(region->bitmap, frame) != PMM_FRAME_ALLOCATED) {
-      return -1;  // Already free
+      return PMM_ERROR_ALREADY_FREE;
     }
   }
 
@@ -261,5 +272,5 @@ int pmm_free(uintptr_t base, size_t frames) {
     set_frame_state(region->bitmap, frame, PMM_FRAME_FREE);
   }
 
-  return 0;
+  return PMM_OK;
 }

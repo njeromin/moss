@@ -7,7 +7,7 @@ endif()
 
 set(linker_script "${CMAKE_CURRENT_SOURCE_DIR}/arch/${OS_ARCH}/linker.ld")
 if(KERNEL_SOURCES)
-    list(APPEND KERNEL_SOURCES core/kmain.c core/console.c core/panic.c core/memory/pmm.c core/memory/allocation/boot_alloc.c)
+    list(APPEND KERNEL_SOURCES core/kmain.c core/console.c core/panic.c core/memory/pmm.c core/memory/vmm.c core/memory/allocation/boot_alloc.c)
     if(EXISTS "${linker_script}")
         add_executable(kernel ${KERNEL_SOURCES})
         set_target_properties(kernel PROPERTIES SUFFIX .elf

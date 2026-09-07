@@ -1,17 +1,19 @@
 #pragma once
 
+#include <arch/memory/layout.h>
 #include <stddef.h>
 #include <stdint.h>
 
-struct boot_allocator {
-  uintptr_t current;
-  uintptr_t end;
-};
+// Copy the discovery map into owned storage. Bounds describe a writable
+// identity mapping, with an exclusive end. Invalid input panics.
+void boot_alloc_init(struct memory_map* memory_map, uintptr_t mapped_start,
+                     uintptr_t mapped_end);
 
-// Linker-defined bounds for the early kernel bootstrap arena.
-// These need to be defined by the linker script for each architecture.
-extern char boot_allocator_start[];
-extern char boot_allocator_end[];
+// Reserve bytes in available RAM; alignment must be a power of two.
+// Returns NULL on exhaustion, invalid arguments, or after the PMM handoff.
+void* boot_alloc(size_t size, size_t alignment);
 
-void* boot_alloc(struct boot_allocator* allocator, size_t size,
-                 size_t alignment);
+// Includes all allocations made since initialization.
+const struct memory_map* boot_alloc_memory_map(void);
+// Disable early allocations before the PMM consumes the final reservations.
+void boot_alloc_finish(void);

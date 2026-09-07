@@ -13,8 +13,10 @@ PHDRS {
 SECTIONS {
     /* OpenSBI occupies the beginning of RAM. Bootstrap runs without paging. */
     . = 0x80200000;
+    bootstrap_start = .;
     .boot : { KEEP(*(.init)) *(.boot.rodata) } :boot
     .boot.bss (NOLOAD) : ALIGN(4096) { *(.boot.bss) } :boot
+    bootstrap_end = .;
     ASSERT(. <= KERNEL_LMA, "Bootstrap overlaps kernel physical load address")
 
     . = KERNEL_VMA;
@@ -28,6 +30,10 @@ SECTIONS {
         QUAD(KERNEL_VMA)
         kernel_physical_base = .;
         QUAD(KERNEL_LMA)
+        bootstrap_physical_start = .;
+        QUAD(bootstrap_start)
+        bootstrap_physical_end = .;
+        QUAD(bootstrap_end)
         kernel_physical_start = .;
         QUAD(KERNEL_LMA)
         *(.rodata .rodata.* .srodata .srodata.*)
@@ -47,11 +53,6 @@ SECTIONS {
         bss_end = .;
         . += 16384;
         stack_top = .;
-    } :data
-    .boot_alloc ALIGN(4096) (NOLOAD) : AT(ADDR(.boot_alloc) - KERNEL_VMA + KERNEL_LMA) {
-        boot_allocator_start = .;
-        . += 65536;
-        boot_allocator_end = .;
     } :data
     kernel_end = .;
     ASSERT(kernel_end - KERNEL_VMA <= 0x200000,

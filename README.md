@@ -10,12 +10,24 @@ kernel that exceeds that mapping, including its 16 KiB boot-hart stack.
 
 For initial bring-up, both the high kernel mapping and the identity mapping
 of `0x80000000..0xbfffffff` are supervisor-only read/write/execute mappings.
-The identity mapping keeps the bootstrap and QEMU's DTB accessible; it does
-not imply that the entire range contains usable RAM. `entry.c` still receives
-the DTB's physical address. Memory management must replace these temporary
+The identity mapping keeps the bootstrap accessible. Before enabling paging,
+the bootstrap reads the DTB's size and identity-maps every 1 GiB region it
+touches, so its placement may vary with QEMU's RAM size. These mappings do
+not imply that the entire ranges contain usable RAM. DTBs must fit within
+Sv39's lower canonical half (below 256 GiB). `entry.c` receives the DTB's
+physical address and mapped buffer bound. Memory management must replace these temporary
 mappings with section-specific permissions and a deliberate physical-memory
 mapping before removing the identity mapping. Device MMIO is not mapped yet.
 Only the OpenSBI boot hart may use this entry; secondary harts need another path.
+
+Early allocation copies the discovered memory map into static bookkeeping and
+reserves aligned allocations from RAM within the first 1 GiB identity mapping.
+There is no fixed linker arena. The DTB, firmware reservations, kernel, and
+bootstrap tables are excluded. The PMM allocates all descriptors and bitmaps
+before marking reservations, then disables early allocation. Its metadata must
+remain mapped when the temporary page tables are replaced. Each available and
+reserved list currently has capacity for 64 entries; allocation fails when the
+reserved list is full.
 
 ```sh
 cmake --preset riscv64-debug

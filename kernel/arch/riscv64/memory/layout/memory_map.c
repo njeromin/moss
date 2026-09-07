@@ -3,6 +3,9 @@
 #include <common/endian.h>
 #include <common/fdt.h>
 
+extern const uintptr_t bootstrap_physical_start;
+extern const uintptr_t bootstrap_physical_end;
+
 static int add_available(struct memory_map* memory_map,
                          struct memory_region region) {
   if (memory_map->available_count + 1 > memory_map->available_capacity) {
@@ -117,6 +120,27 @@ static int memory_map_dtb(const void* dtb, struct memory_map* memory_map) {
     return ARCH_MEMORY_MAP_INVALID;
   }
 
+  const unsigned char* blob = dtb;
+  if (add_reserved(memory_map, (struct memory_region){
+          .offset = (uintptr_t)dtb,
+          .size = be32toh(blob + 4),
+          .flags = MEMORY_REGION_RESERVED}) != 0) {
+    return ARCH_MEMORY_MAP_NO_SPACE;
+  }
+  // The validated FDT reservation block is separate from /reserved-memory.
+  const unsigned char* entry = blob + be32toh(blob + 16);
+  for (;; entry += 16) {
+    uint64_t address = be64toh(entry);
+    uint64_t length = be64toh(entry + 8);
+    if (address == 0 && length == 0) break;
+    if (length > UINTPTR_MAX - address) return ARCH_MEMORY_MAP_INVALID;
+    if (length != 0 && add_reserved(memory_map, (struct memory_region){
+            .offset = address, .size = length,
+            .flags = MEMORY_REGION_RESERVED | MEMORY_REGION_FIRMWARE}) != 0) {
+      return ARCH_MEMORY_MAP_NO_SPACE;
+    }
+  }
+
   {
     uint32_t value;
     if (fdt_property_u32(dtb, &root, "#address-cells", &value) == 0) {
@@ -198,16 +222,24 @@ int arch_get_memory_map(
   memory_map->min_phys_addr = SIZE_MAX;
   memory_map->max_phys_addr = 0;
 
-  if (memory_map_kernel(memory_map) != ARCH_MEMORY_MAP_OK) {
-    // TODO: Change this, this is handling error wrong.
+  int res = ARCH_MEMORY_MAP_OK;
+
+  res = memory_map_kernel(memory_map);
+  if (res != ARCH_MEMORY_MAP_OK) {
     return ARCH_MEMORY_MAP_INVALID;
   }
 
-  if (memory_map_dtb((void*)device_discovery_info.dtb, memory_map) !=
-      ARCH_MEMORY_MAP_OK) {
-    // TODO: Change this, this is handling error wrong.
+  res = memory_map_dtb((void*)device_discovery_info.dtb, memory_map);
+  if (res != ARCH_MEMORY_MAP_OK) {
     return ARCH_MEMORY_MAP_INVALID;
   }
 
-  return ARCH_MEMORY_MAP_OK;
+  if (add_reserved(memory_map, (struct memory_region){
+          .offset = bootstrap_physical_start,
+          .size = bootstrap_physical_end - bootstrap_physical_start,
+          .flags = MEMORY_REGION_RESERVED}) != 0) {
+    return ARCH_MEMORY_MAP_NO_SPACE;
+  }
+
+  return res;
 }

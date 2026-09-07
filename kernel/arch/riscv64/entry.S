@@ -2,6 +2,8 @@
 .equ PAGE_SIZE,           (1 << PAGE_SHIFT)
 .equ PTE_SIZE,            8
 .equ PTE_PPN_SHIFT,       10
+.equ GIGAPAGE_SHIFT,     30
+.equ SV39_LOW_LIMIT,     (1 << 38)
 
 .equ PTE_VALID,           (1 << 0)
 .equ PTE_READ,            (1 << 1)
@@ -45,10 +47,56 @@ start:
   // From here: t0 = root table, t1 = L1 table, t2 = PTE, t3 = slot address.
   la t0, boot_root
   // Root[2]: identity map 0x80000000..0xbfffffff with a 1 GiB leaf.
-  // V|R|W|X|A|D, supervisor only. Retain for physical DTB access for now.
+  // V|R|W|X|A|D, supervisor only. Keep the bootstrap accessible.
   li t1, ((RAM_BASE >> PAGE_SHIFT) << PTE_PPN_SHIFT) | BOOT_LEAF_FLAGS
   sd t1, (IDENTITY_ROOT_SLOT * PTE_SIZE)(t0)
 
+  // Read the DTB prefix while addresses are still physical. a2 carries the
+  // mapped buffer bound to C; zero makes validation reject an invalid prefix.
+  // Identity addresses must stay in Sv39's lower canonical half.
+  li a2, 0
+  beqz a1, .Lmap_kernel
+  andi t1, a1, 7
+  bnez t1, .Lmap_kernel
+  li t1, SV39_LOW_LIMIT - 8
+  bgtu a1, t1, .Lmap_kernel
+  lwu t1, 0(a1)
+  li t2, 0xedfe0dd0             // FDT magic, loaded little-endian.
+  bne t1, t2, .Lmap_kernel
+
+  // totalsize is a big-endian u32 at offset 4.
+  lbu t1, 4(a1)
+  lbu t2, 5(a1)
+  slli t1, t1, 8
+  or t1, t1, t2
+  lbu t2, 6(a1)
+  slli t1, t1, 8
+  or t1, t1, t2
+  lbu t2, 7(a1)
+  slli t1, t1, 8
+  or t1, t1, t2
+  li t2, 40                    // Minimum FDT header size.
+  bltu t1, t2, .Lmap_kernel
+  add t4, a1, t1               // Exclusive physical end of the DTB.
+  li t2, SV39_LOW_LIMIT
+  bgtu t4, t2, .Lmap_kernel
+
+  // Install every 1 GiB leaf touched by the blob, including boundary spans.
+  srli t1, a1, GIGAPAGE_SHIFT
+  addi t4, t4, -1
+  srli t4, t4, GIGAPAGE_SHIFT
+.Lmap_dtb:
+  slli t2, t1, (GIGAPAGE_SHIFT - PAGE_SHIFT + PTE_PPN_SHIFT)
+  ori t2, t2, BOOT_LEAF_FLAGS
+  slli t3, t1, 3
+  add t3, t0, t3
+  sd t2, 0(t3)
+  addi t1, t1, 1
+  bleu t1, t4, .Lmap_dtb
+  slli a2, t1, GIGAPAGE_SHIFT
+  sub a2, a2, a1
+
+.Lmap_kernel:
   // Root[510]: high region starting at 0xffffffff80000000.
   la t1, boot_kernel_l1
   // Non-leaf PTE: physical page number plus V, without R/W/X permissions.
@@ -122,7 +170,7 @@ higher_half_entry:
   j .Lclear_kernel_bss
 
 .Lenter_kernel_c:
-  // a0/a1 still hold OpenSBI's hart ID and physical DTB address.
+  // a0/a1 hold OpenSBI's hart ID/physical DTB; a2 is its mapped buffer bound.
   la sp, stack_top
   call arch_startup_core_entry
 

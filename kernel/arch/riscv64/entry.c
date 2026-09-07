@@ -1,25 +1,20 @@
 #include <core/kmain.h>
 
-#include "core/panic.h"
-#include "sbi.h"
 #include <arch/memory/layout.h>
 #include <common/fdt.h>
 #include <core/console.h>
+#include <core/panic.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #define _CONSOLE_LOG_SUBJECT "arch_entry"
 
-void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr) {
+void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr,
+                             size_t dtb_size) {
   console_log(_CONSOLE_LOG_SUBJECT,
               "Entered C portion of arch specific init.\n");
 
-  // The temporary identity mapping covers 0x80000000..0xc0000000.
-  size_t dtb_size = (uintptr_t)0xc0000000ULL - dtb_ptr;
-  if (dtb_ptr < (uintptr_t)0x80000000ULL ||
-      dtb_ptr >= (uintptr_t)0xc0000000ULL) {
-    dtb_size = 0;
-  }
+  // The bootstrap identity-maps the DTB and supplies its readable bound.
   if (fdt_check_full((const void*)dtb_ptr, dtb_size) != 0) {
     kpanic("Failed to validate DTB.\n");
   }
