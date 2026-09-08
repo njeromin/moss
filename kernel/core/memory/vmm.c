@@ -1,13 +1,35 @@
 #include <core/memory/vmm.h>
 
+#include <arch/memory/layout.h>
 #include <arch/memory/paging_info.h>
+#include <common/memory.h>
 #include <core/memory/pmm.h>
 
 static struct vmm_space kernel_space;
 
 int vmm_init(void) {
-  (void)arch_paging_create_space(&kernel_space.root_phys);
+  if (arch_paging_create_space(&kernel_space.root_phys) != 0) {
+    return -1;
+  }
+
+  uintptr_t phys_start = kernel_physical_start;
+  uintptr_t phys_end = kernel_physical_end;
+  size_t kernel_size = align_up(phys_end - phys_start, PAGE_SIZE);
+  uintptr_t virt_start = arch_kernel_phys_to_virt(phys_start);
+
+  int err = vmm_map(&kernel_space, virt_start, phys_start, kernel_size,
+                    PAGE_READ | PAGE_WRITE | PAGE_EXEC);
+  if (err != 0) {
+    return err;
+  }
+
+  arch_paging_switch_space(kernel_space.root_phys, 0);
+
   return 0;
+}
+
+struct vmm_space* vmm_get_kernel_space(void) {
+  return &kernel_space;
 }
 
 int vmm_map(struct vmm_space* space, uintptr_t virt, uintptr_t phys,
@@ -20,7 +42,6 @@ int vmm_map(struct vmm_space* space, uintptr_t virt, uintptr_t phys,
     int res =
         arch_paging_map(space->root_phys, virt + offset, phys + offset, flags);
     if (res != PAGING_OK) {
-      // (Optional: unmap previously mapped pages on failure)
       return res;
     }
   }

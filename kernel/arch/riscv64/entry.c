@@ -11,6 +11,7 @@
 
 void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr,
                              size_t dtb_size) {
+  (void)hart_id;
   console_log(_CONSOLE_LOG_SUBJECT,
               "Entered C portion of arch specific init.\n");
 

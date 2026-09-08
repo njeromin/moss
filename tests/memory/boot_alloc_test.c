@@ -3,13 +3,17 @@
    kernel/core/memory/pmm.c common/memory.c -o /tmp/boot_alloc_test
    Then run /tmp/boot_alloc_test. */
 #include <assert.h>
-#include <stdlib.h>
 #include <core/memory/allocation/boot_alloc.h>
 #include <core/memory/pmm.h>
+#include <stdlib.h>
 
 void kpanic(const char* format, ...) {
   (void)format;
   abort();
+}
+
+uintptr_t arch_phys_to_virt(uintptr_t phys) {
+  return phys;
 }
 
 static _Alignas(4096) unsigned char ram[4096 * 32];
@@ -23,8 +27,12 @@ int main(void) {
       {.offset = base, .size = 80},
   };
   struct memory_map map = {
-      .available = memory, .available_count = 1, .available_capacity = 1,
-      .reserved = reserved, .reserved_count = 2, .reserved_capacity = 2,
+      .available = memory,
+      .available_count = 1,
+      .available_capacity = 1,
+      .reserved = reserved,
+      .reserved_count = 2,
+      .reserved_capacity = 2,
   };
   assert(boot_alloc(1, 1) == NULL);
   boot_alloc_init(&map, base, base + sizeof(ram));
@@ -45,7 +53,9 @@ int main(void) {
   // A full reservation array must fail without handing out untracked RAM.
   boot_alloc_init(&map, base, base + sizeof(ram));
   size_t capacity = boot_alloc_memory_map()->reserved_capacity;
-  for (size_t i = 0; i < capacity; ++i) assert(boot_alloc(1, 1) != NULL);
+  for (size_t i = 0; i < capacity; ++i) {
+    assert(boot_alloc(1, 1) != NULL);
+  }
   assert(boot_alloc(1, 1) == NULL);
 
   memory[0] = (struct memory_region){.offset = UINTPTR_MAX - 31, .size = 31};

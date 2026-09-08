@@ -4,6 +4,7 @@
 #include "common/memory.h"
 #include "core/memory/allocation/boot_alloc.h"
 #include "core/memory/regions.h"
+#include <arch/memory/layout.h>
 
 static struct pmm_ctx pmm;
 
@@ -34,10 +35,11 @@ static int emit_pmm_region(uintptr_t addr_start, uintptr_t addr_end) {
 
   frame_count = (addr_end - addr_start) / PMM_FRAME_SIZE;
   bitmap_size = (frame_count + 3) / 4;
-  bitmap = boot_alloc(bitmap_size, 1);
-  if (bitmap == 0) {
+  void* raw_bitmap = boot_alloc(bitmap_size, 1);
+  if (raw_bitmap == NULL) {
     return -1;
   }
+  bitmap = (uint8_t*)arch_phys_to_virt((uintptr_t)raw_bitmap);
 
   // Available frames start free. Reserved ranges are marked allocated below.
   for (size_t i = 0; i < bitmap_size; ++i) {
@@ -99,12 +101,12 @@ enum pmm_result pmm_init(void) {
     return PMM_ERROR_INVALID_REGIONS;
   }
 
-  pmm.regions =
-      boot_alloc(sizeof(*pmm.regions) * region_capacity,
-                 _Alignof(struct pmm_region));
-  if (pmm.regions == 0) {
+  void* raw_regions = boot_alloc(sizeof(*pmm.regions) * region_capacity,
+                                 _Alignof(struct pmm_region));
+  if (raw_regions == NULL) {
     return PMM_ERROR_INVALID_REGIONS;
   }
+  pmm.regions = (struct pmm_region*)arch_phys_to_virt((uintptr_t)raw_regions);
   pmm.region_count = 0;
   pmm.region_capacity = region_capacity;
 
@@ -120,7 +122,9 @@ enum pmm_result pmm_init(void) {
       return PMM_ERROR_INVALID_INPUT;
     }
     available_end = available.offset + available.size;
-    if (available.offset > UINTPTR_MAX - (PMM_FRAME_SIZE - 1)) continue;
+    if (available.offset > UINTPTR_MAX - (PMM_FRAME_SIZE - 1)) {
+      continue;
+    }
     start = align_up(available.offset, PMM_FRAME_SIZE);
     end = align_down(available_end, PMM_FRAME_SIZE);
     if (start >= end) {
@@ -129,7 +133,6 @@ enum pmm_result pmm_init(void) {
     if (emit_pmm_region(start, end) != 0) {
       return PMM_ERROR_CANT_EMIT_REGION;
     }
-
   }
 
   // All metadata must be reserved before any bitmap consumes the map.
@@ -143,7 +146,9 @@ enum pmm_result pmm_init(void) {
       if (reserved.size > UINTPTR_MAX - reserved.offset) {
         return PMM_ERROR_INVALID_INPUT;
       }
-      if (reserved.size == 0) continue;
+      if (reserved.size == 0) {
+        continue;
+      }
       reserved_end = reserved.offset + reserved.size;
       if (reserved_end > UINTPTR_MAX - (PMM_FRAME_SIZE - 1)) {
         return PMM_ERROR_INVALID_INPUT;

@@ -1,12 +1,13 @@
+#include <arch/memory/layout.h>
 #include <arch/memory/paging.h>
+#include <arch/memory/paging_info.h>
 #include <common/memory.h>
 #include <core/memory/pmm.h>
-
-#include <arch/memory/paging_info.h>
 
 #define SV39_ROOT_ENTRIES 512
 #define SV39_USER_ENTRIES 256
 #define SV39_KERNEL_ENTRIES 256
+#define HHDM_ROOT_SLOT 256
 
 #define SATP_MODE_SV39 (8ULL << 60)
 #define SATP_ASID_SHIFT 44
@@ -39,7 +40,7 @@ static inline uint64_t phys_to_ppn(phys_addr_t pa) {
 }
 
 static uint64_t* walk(phys_addr_t root, virt_addr_t virt, int alloc) {
-  uint64_t* table = (uint64_t*)root;  // identity-mapped in early boot
+  uint64_t* table = (uint64_t*)arch_phys_to_virt(root);
 
   // Traverse levels 2 and 1 down to level 0
   for (int level = 2; level > 0; level--) {
@@ -47,7 +48,11 @@ static uint64_t* walk(phys_addr_t root, virt_addr_t virt, int alloc) {
     uint64_t pte = table[idx];
 
     if (pte & PTE_VALID) {
-      table = (uint64_t*)pte_to_phys(pte);
+      if (pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) {
+        // Leaf huge page already occupies this slot; cannot traverse further
+        return NULL;
+      }
+      table = (uint64_t*)arch_phys_to_virt(pte_to_phys(pte));
     } else {
       if (!alloc) {
         return NULL;
@@ -59,11 +64,11 @@ static uint64_t* walk(phys_addr_t root, virt_addr_t virt, int alloc) {
         return NULL;
       }
 
-      memory_set((void*)new_table_phys, 0, PAGE_SIZE);
+      memory_set((void*)arch_phys_to_virt(new_table_phys), 0, PAGE_SIZE);
 
       // Point current PTE to the new table (Valid, no R/W/X makes it a branch)
       table[idx] = phys_to_ppn(new_table_phys) | PTE_VALID;
-      table = (uint64_t*)new_table_phys;
+      table = (uint64_t*)arch_phys_to_virt(new_table_phys);
     }
   }
 
@@ -85,12 +90,21 @@ int arch_paging_create_space(phys_addr_t* out_root) {
     return PAGING_ERR_NOMEM;
   }
 
-  // During early boot, RAM is identity-mapped in the bootstrap window
-  uint64_t* root_table = (uint64_t*)phys;
+  uint64_t* root_table = (uint64_t*)arch_phys_to_virt(phys);
 
   if (master_kernel_root == 0) {
     // Zero out all 512 entries
     memory_set(root_table, 0, PAGE_SIZE);
+
+    // Direct-map physical RAM into the Higher-Half Direct Map (HHDM)
+    // Root slots 256..383 cover 128 GiB of physical space.
+    // DRAM starts at 0x80000000 (gigapage 2 -> slot 258).
+    uint64_t hhdm_flags =
+        PTE_VALID | PTE_READ | PTE_WRITE | PTE_ACCESSED | PTE_DIRTY;
+    for (size_t g = 2; g < 128; g++) {
+      size_t slot = HHDM_ROOT_SLOT + g;
+      root_table[slot] = phys_to_ppn((phys_addr_t)g << 30) | hhdm_flags;
+    }
 
     // Save as the template for future user spaces
     master_kernel_root = phys;
@@ -99,7 +113,7 @@ int arch_paging_create_space(phys_addr_t* out_root) {
     memory_set(&root_table[0], 0, SV39_USER_ENTRIES * sizeof(uint64_t));
 
     // Share kernel mappings by copying the top-level kernel entries (slots 256..511)
-    uint64_t* kernel_table = (uint64_t*)master_kernel_root;
+    uint64_t* kernel_table = (uint64_t*)arch_phys_to_virt(master_kernel_root);
     memory_copy(&root_table[SV39_USER_ENTRIES],
                 &kernel_table[SV39_USER_ENTRIES],
                 SV39_KERNEL_ENTRIES * sizeof(uint64_t));
@@ -114,7 +128,7 @@ void arch_paging_destroy_space(phys_addr_t root) {
     return;
   }
 
-  uint64_t* table2 = (uint64_t*)root;
+  uint64_t* table2 = (uint64_t*)arch_phys_to_virt(root);
 
   // Only free user mappings (slots 0..255). Never touch shared kernel slots (256..511).
   for (size_t idx2 = 0; idx2 < SV39_USER_ENTRIES; idx2++) {
@@ -124,7 +138,7 @@ void arch_paging_destroy_space(phys_addr_t root) {
     }
 
     phys_addr_t table1_phys = pte_to_phys(pte2);
-    uint64_t* table1 = (uint64_t*)table1_phys;
+    uint64_t* table1 = (uint64_t*)arch_phys_to_virt(table1_phys);
 
     for (size_t idx1 = 0; idx1 < SV39_ROOT_ENTRIES; idx1++) {
       uint64_t pte1 = table1[idx1];
@@ -208,7 +222,7 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
 
-  uint64_t* table2 = (uint64_t*)root;
+  uint64_t* table2 = (uint64_t*)arch_phys_to_virt(root);
   size_t idx2 = vpn(virt, 2);
   uint64_t pte2 = table2[idx2];
   if (!(pte2 & PTE_VALID) || (pte2 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
@@ -216,7 +230,7 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
   }
 
   phys_addr_t table1_phys = pte_to_phys(pte2);
-  uint64_t* table1 = (uint64_t*)table1_phys;
+  uint64_t* table1 = (uint64_t*)arch_phys_to_virt(table1_phys);
   size_t idx1 = vpn(virt, 1);
   uint64_t pte1 = table1[idx1];
   if (!(pte1 & PTE_VALID) || (pte1 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
@@ -224,7 +238,7 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
   }
 
   phys_addr_t table0_phys = pte_to_phys(pte1);
-  uint64_t* table0 = (uint64_t*)table0_phys;
+  uint64_t* table0 = (uint64_t*)arch_phys_to_virt(table0_phys);
   size_t idx0 = vpn(virt, 0);
   uint64_t pte0 = table0[idx0];
   if (!(pte0 & PTE_VALID)) {
@@ -254,31 +268,45 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
 
 int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
                       unsigned* out_permissions) {
-  uint64_t* pte = walk(root, virt, 0);
-  if (pte == NULL || !(*pte & PTE_VALID)) {
-    return PAGING_ERR_NOT_MAPPED;
+  uint64_t* table = (uint64_t*)arch_phys_to_virt(root);
+
+  for (int level = 2; level >= 0; level--) {
+    size_t idx = vpn(virt, level);
+    uint64_t pte = table[idx];
+
+    if (!(pte & PTE_VALID)) {
+      return PAGING_ERR_NOT_MAPPED;
+    }
+
+    // Leaf PTE has at least one of R, W, X set (or it's level 0)
+    if ((pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) || level == 0) {
+      if (out_phys) {
+        size_t offset_mask = (1ULL << (12 + (level * 9))) - 1;
+        *out_phys = (pte_to_phys(pte) & ~offset_mask) | (virt & offset_mask);
+      }
+      if (out_permissions) {
+        unsigned perms = 0;
+        if (pte & PTE_READ) {
+          perms |= PAGE_READ;
+        }
+        if (pte & PTE_WRITE) {
+          perms |= PAGE_WRITE;
+        }
+        if (pte & PTE_EXECUTE) {
+          perms |= PAGE_EXEC;
+        }
+        if (pte & PTE_USER) {
+          perms |= PAGE_USER;
+        }
+        *out_permissions = perms;
+      }
+      return PAGING_OK;
+    }
+
+    table = (uint64_t*)arch_phys_to_virt(pte_to_phys(pte));
   }
 
-  if (out_phys) {
-    *out_phys = pte_to_phys(*pte) | (virt & PAGE_MASK);
-  }
-  if (out_permissions) {
-    unsigned perms = 0;
-    if (*pte & PTE_READ) {
-      perms |= PAGE_READ;
-    }
-    if (*pte & PTE_WRITE) {
-      perms |= PAGE_WRITE;
-    }
-    if (*pte & PTE_EXECUTE) {
-      perms |= PAGE_EXEC;
-    }
-    if (*pte & PTE_USER) {
-      perms |= PAGE_USER;
-    }
-    *out_permissions = perms;
-  }
-  return PAGING_OK;
+  return PAGING_ERR_NOT_MAPPED;
 }
 
 void arch_paging_flush_page(virt_addr_t virt) {

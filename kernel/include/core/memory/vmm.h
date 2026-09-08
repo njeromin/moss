@@ -10,6 +10,8 @@ struct vmm_space {
 
 int vmm_init(void);
 
+struct vmm_space* vmm_get_kernel_space(void);
+
 int vmm_map(struct vmm_space* space, virt_addr_t virt, phys_addr_t phys,
             size_t size, uint8_t flags);
 

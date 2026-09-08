@@ -9,6 +9,13 @@
 uintptr_t arch_kernel_virt_to_phys(uintptr_t virt);
 uintptr_t arch_kernel_phys_to_virt(uintptr_t phys);
 
+// Higher-Half Direct Map (HHDM) base address (Sv39 Slot 256).
+#define HHDM_BASE 0xffffffc000000000ULL
+
+// Translate between physical addresses and their Higher-Half Direct Map virtual addresses.
+uintptr_t arch_phys_to_virt(uintptr_t phys);
+uintptr_t arch_virt_to_phys(uintptr_t virt);
+
 // Writable identity-mapped range usable by the early allocator.
 struct memory_region arch_boot_alloc_window(void);
 

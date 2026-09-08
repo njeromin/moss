@@ -16,6 +16,7 @@
 
 .equ RAM_BASE,            0x80000000
 .equ IDENTITY_ROOT_SLOT,  2       // VA 0x80000000, a 1 GiB identity mapping.
+.equ HHDM_ROOT_BASE_SLOT, 256     // VA 0xffffffc000000000; direct physical map.
 .equ KERNEL_ROOT_SLOT,    510     // VA 0xffffffff80000000; matches KERNEL_VMA.
 .equ SATP_SV39,           (8 << 60)
 .equ SSTATUS_SIE,         (1 << 1)
@@ -47,9 +48,13 @@ start:
   // From here: t0 = root table, t1 = L1 table, t2 = PTE, t3 = slot address.
   la t0, boot_root
   // Root[2]: identity map 0x80000000..0xbfffffff with a 1 GiB leaf.
+  // Root[258]: HHDM direct map for 0x80000000..0xbfffffff.
   // V|R|W|X|A|D, supervisor only. Keep the bootstrap accessible.
   li t1, ((RAM_BASE >> PAGE_SHIFT) << PTE_PPN_SHIFT) | BOOT_LEAF_FLAGS
   sd t1, (IDENTITY_ROOT_SLOT * PTE_SIZE)(t0)
+  li t2, ((HHDM_ROOT_BASE_SLOT + IDENTITY_ROOT_SLOT) * PTE_SIZE)
+  add t2, t0, t2
+  sd t1, 0(t2)
 
   // Read the DTB prefix while addresses are still physical. a2 carries the
   // mapped buffer bound to C; zero makes validation reject an invalid prefix.
@@ -91,6 +96,10 @@ start:
   slli t3, t1, 3
   add t3, t0, t3
   sd t2, 0(t3)
+  // Also install in HHDM (Root[256 + t1]):
+  li t5, (HHDM_ROOT_BASE_SLOT * PTE_SIZE)
+  add t5, t3, t5
+  sd t2, 0(t5)
   addi t1, t1, 1
   bleu t1, t4, .Lmap_dtb
   slli a2, t1, GIGAPAGE_SHIFT

@@ -91,6 +91,50 @@ void init_virtual_memory(const struct device_discovery_info device_discovery) {
 
   console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT,
               "Initialised virtual memory manager.\n");
+
+  struct vmm_space* kernel_space = vmm_get_kernel_space();
+  uintptr_t phys_test;
+
+  // 1. Verify kmain virtual address translates to its physical address
+  if (vmm_translate(kernel_space, (uintptr_t)kmain, &phys_test) != 0) {
+    kpanic("Failed to translate kmain\n");
+  }
+  console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT, "kmain translation: %p -> %p\n",
+              (void*)kmain, (void*)phys_test);
+
+  // 2. Verify HHDM virtual address translates to physical RAM
+  uintptr_t hhdm_test_va = arch_phys_to_virt(0x80000000ULL);
+  if (vmm_translate(kernel_space, hhdm_test_va, &phys_test) != 0 ||
+      phys_test != 0x80000000ULL) {
+    kpanic("Failed to translate HHDM RAM address\n");
+  }
+  console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT, "HHDM translation: %p -> %p\n",
+              (void*)hhdm_test_va, (void*)phys_test);
+
+  // 3. Verify lower-half identity address 0x80000000 is NOT mapped in kernel_space
+  if (vmm_translate(kernel_space, 0x80000000ULL, &phys_test) == 0) {
+    kpanic("Lower-half identity address is still mapped!\n");
+  }
+  console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT,
+              "Lower-half address 0x80000000 is unmapped (verified).\n");
+
+  // 4. Verify PMM allocation and access via HHDM works post-vmm_init
+  uintptr_t test_frame;
+  if (pmm_alloc(1, &test_frame) != PMM_OK) {
+    kpanic("Failed to allocate frame post-vmm_init\n");
+  }
+  volatile uint64_t* frame_ptr =
+      (volatile uint64_t*)arch_phys_to_virt(test_frame);
+  *frame_ptr = 0xdeadbeefcafebabeULL;
+  if (*frame_ptr != 0xdeadbeefcafebabeULL) {
+    kpanic("HHDM write/read verification failed\n");
+  }
+  if (pmm_free(test_frame, 1) != PMM_OK) {
+    kpanic("Failed to free frame post-vmm_init\n");
+  }
+  console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT,
+              "Post-VMM PMM alloc/write/free verified on frame %p.\n",
+              (void*)test_frame);
 }
 
 void kmain(struct entry_info entry_info) {
