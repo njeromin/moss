@@ -1,3 +1,4 @@
+#include <arch/cpu.h>
 #include <arch/memory/layout.h>
 #include <arch/memory/paging.h>
 #include <arch/memory/paging_info.h>
@@ -74,6 +75,28 @@ static uint64_t* walk(phys_addr_t root, virt_addr_t virt, int alloc) {
 
   // Return a pointer to the Level 0 PTE
   return &table[vpn(virt, 0)];
+}
+
+// Traverse page table to locate the leaf PTE (level 2 huge, level 1 large, or level 0 base page)
+static uint64_t* walk_leaf(phys_addr_t root, virt_addr_t virt) {
+  uint64_t* table = (uint64_t*)arch_phys_to_virt(root);
+
+  for (int level = 2; level >= 0; level--) {
+    size_t idx = vpn(virt, level);
+    uint64_t* pte = &table[idx];
+
+    if (!(*pte & PTE_VALID)) {
+      return NULL;
+    }
+
+    if ((*pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) || level == 0) {
+      return pte;
+    }
+
+    table = (uint64_t*)arch_phys_to_virt(pte_to_phys(*pte));
+  }
+
+  return NULL;
 }
 
 // Master kernel root saved during boot
@@ -188,8 +211,7 @@ int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
     return PAGING_ERR_ALREADY_MAPPED;
   }
 
-  // Leaf flags: Valid, Accessed, Dirty (avoids early hardware page faults)
-  uint64_t flags = PTE_VALID | PTE_ACCESSED | PTE_DIRTY;
+  uint64_t flags = PTE_VALID;
   if (permissions & PAGE_READ) {
     flags |= PTE_READ;
   }
@@ -201,6 +223,28 @@ int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
   }
   if (permissions & PAGE_USER) {
     flags |= PTE_USER;
+  }
+
+  // Handle Svadu (hardware A/D update) vs non-Svadu (software / Svade)
+  if (arch_has_svadu()) {
+    if (!(permissions & PAGE_USER)) {
+      // For kernel pages, pre-set Accessed (and Dirty if writable) to avoid
+      // unnecessary atomic bus writes on permanent kernel mappings.
+      flags |= PTE_ACCESSED;
+      if (permissions & PAGE_WRITE) {
+        flags |= PTE_DIRTY;
+      }
+    }
+    // For user pages, leave A and D un-set (0) so hardware autonomously
+    // tracks the first read/write.
+  } else {
+    // Non-Svadu: Hardware does not update A/D bits automatically. Pre-set
+    // Accessed, and Dirty if writable, preventing traps on systems without
+    // software A/D fault handlers.
+    flags |= PTE_ACCESSED;
+    if (permissions & PAGE_WRITE) {
+      flags |= PTE_DIRTY;
+    }
   }
 
   *pte = phys_to_ppn(phys) | flags;
@@ -307,6 +351,73 @@ int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
   }
 
   return PAGING_ERR_NOT_MAPPED;
+}
+
+int arch_paging_get_status(phys_addr_t root, virt_addr_t virt,
+                           struct page_status* out_status) {
+  if ((virt & PAGE_MASK) != 0) {
+    return PAGING_ERR_INVALID_ALIGNMENT;
+  }
+  if (out_status == NULL) {
+    return PAGING_ERR_INVALID_ARG;
+  }
+
+  uint64_t* pte = walk_leaf(root, virt);
+  if (pte == NULL || !(*pte & PTE_VALID)) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
+  out_status->accessed = (*pte & PTE_ACCESSED) != 0;
+  out_status->dirty = (*pte & PTE_DIRTY) != 0;
+  return PAGING_OK;
+}
+
+int arch_paging_clear_status(phys_addr_t root, virt_addr_t virt,
+                             unsigned status_flags) {
+  if ((virt & PAGE_MASK) != 0) {
+    return PAGING_ERR_INVALID_ALIGNMENT;
+  }
+
+  uint64_t* pte = walk_leaf(root, virt);
+  if (pte == NULL || !(*pte & PTE_VALID)) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
+  uint64_t pte_mask = 0;
+  if (status_flags & PAGE_STATUS_ACCESSED) {
+    pte_mask |= PTE_ACCESSED;
+  }
+  if (status_flags & PAGE_STATUS_DIRTY) {
+    pte_mask |= PTE_DIRTY;
+  }
+
+  *pte &= ~pte_mask;
+  arch_paging_flush_page(virt);
+  return PAGING_OK;
+}
+
+int arch_paging_set_status(phys_addr_t root, virt_addr_t virt,
+                           unsigned status_flags) {
+  if ((virt & PAGE_MASK) != 0) {
+    return PAGING_ERR_INVALID_ALIGNMENT;
+  }
+
+  uint64_t* pte = walk_leaf(root, virt);
+  if (pte == NULL || !(*pte & PTE_VALID)) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
+  uint64_t pte_bits = 0;
+  if (status_flags & PAGE_STATUS_ACCESSED) {
+    pte_bits |= PTE_ACCESSED;
+  }
+  if (status_flags & PAGE_STATUS_DIRTY) {
+    pte_bits |= PTE_DIRTY;
+  }
+
+  *pte |= pte_bits;
+  arch_paging_flush_page(virt);
+  return PAGING_OK;
 }
 
 void arch_paging_flush_page(virt_addr_t virt) {

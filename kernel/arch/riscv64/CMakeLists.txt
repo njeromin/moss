@@ -1,6 +1,7 @@
 list(APPEND KERNEL_SOURCES
     arch/riscv64/entry.c
     arch/riscv64/entry.S
+    arch/riscv64/cpu.c
     arch/riscv64/sbi/ecall.c
     arch/riscv64/sbi/base.c
     arch/riscv64/sbi/timer.c
@@ -11,6 +12,7 @@ list(APPEND KERNEL_SOURCES
     arch/riscv64/sbi/pmu.c
     arch/riscv64/sbi/system_reset.c
     arch/riscv64/sbi/mpxy.c
+    arch/riscv64/sbi/fwft.c
     arch/riscv64/panic.c
     arch/riscv64/memory/paging.c
     arch/riscv64/memory/layout/layout.c

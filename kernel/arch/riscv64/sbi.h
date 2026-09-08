@@ -31,7 +31,44 @@ struct sbi_ret {
 
 /* Base Extension */
 
+#define SBI_SPEC_VERSION_MAJOR_MASK 0x7F000000UL
+#define SBI_SPEC_VERSION_MAJOR_SHIFT 24
+#define SBI_SPEC_VERSION_MINOR_MASK 0x00FFFFFFUL
+#define SBI_SPEC_VERSION_MINOR_SHIFT 0
+
+#define SBI_SPEC_VERSION_MAJOR(v) (((v) >> SBI_SPEC_VERSION_MAJOR_SHIFT) & 0x7FU)
+#define SBI_SPEC_VERSION_MINOR(v) ((v) & SBI_SPEC_VERSION_MINOR_MASK)
+
+/* Standard Implementation IDs */
+#define SBI_IMPL_ID_BBL 0
+#define SBI_IMPL_ID_OPENSBI 1
+#define SBI_IMPL_ID_XVISOR 2
+#define SBI_IMPL_ID_KVM 3
+#define SBI_IMPL_ID_RUSTSBI 4
+#define SBI_IMPL_ID_DRONE 5
+#define SBI_IMPL_ID_CHARIOT 6
+#define SBI_IMPL_ID_ANDES_CODENSE 7
+
+/* Standard Extension IDs (EIDs) */
+#define SBI_EXT_BASE 0x10
+#define SBI_EXT_TIMER 0x54494D45
+#define SBI_EXT_IPI 0x735049
+#define SBI_EXT_RFENCE 0x52464E43
+#define SBI_EXT_HSM 0x48534D
+#define SBI_EXT_SRST 0x53525354
+#define SBI_EXT_PMU 0x504D55
+#define SBI_EXT_DBCN 0x4442434E
+#define SBI_EXT_MPXY 0x4D505859
+#define SBI_EXT_FWFT 0x46574654
+
 struct sbi_ret sbi_get_spec_version(void);
+struct sbi_ret sbi_get_impl_id(void);
+struct sbi_ret sbi_get_impl_version(void);
+struct sbi_ret sbi_probe_extension(long extension_id);
+struct sbi_ret sbi_get_mvendorid(void);
+struct sbi_ret sbi_get_marchid(void);
+struct sbi_ret sbi_get_mimpid(void);
+
 
 /* Timer Extension */
 
@@ -202,3 +239,18 @@ struct sbi_ret sbi_mpxy_send_msg_without_resp(uint32_t channel_id,
                                               uint32_t msg_id,
                                               unsigned long msg_len);
 struct sbi_ret sbi_mpxy_get_notification_events(uint32_t channel_id);
+
+/* Firmware Features (FWFT) Extension */
+
+#define SBI_FWFT_FLAG_LOCK (1UL << 0)
+
+#define SBI_FWFT_MISALIGNED_EXC_DELEG 0x00000000U
+#define SBI_FWFT_LANDING_PAD 0x00000001U
+#define SBI_FWFT_SHADOW_STACK 0x00000002U
+#define SBI_FWFT_DOUBLE_TRAP 0x00000003U
+#define SBI_FWFT_PTE_AD_HW_UPDATING 0x00000004U
+#define SBI_FWFT_POINTER_MASKING_PMLEN 0x00000005U
+
+struct sbi_ret sbi_fwft_set(uint32_t feature, unsigned long value,
+                            unsigned long flags);
+struct sbi_ret sbi_fwft_get(uint32_t feature);

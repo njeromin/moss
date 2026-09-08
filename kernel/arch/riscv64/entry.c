@@ -1,5 +1,6 @@
 #include <core/kmain.h>
 
+#include <arch/cpu.h>
 #include <arch/memory/layout.h>
 #include <common/fdt.h>
 #include <core/console.h>
@@ -11,9 +12,10 @@
 
 void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr,
                              size_t dtb_size) {
-  (void)hart_id;
   console_log(_CONSOLE_LOG_SUBJECT,
               "Entered C portion of arch specific init.\n");
+
+  arch_cpu_init(hart_id);
 
   // The bootstrap identity-maps the DTB and supplies its readable bound.
   if (fdt_check_full((const void*)dtb_ptr, dtb_size) != 0) {

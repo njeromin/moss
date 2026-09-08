@@ -1,0 +1,32 @@
+#include <arch/cpu.h>
+#include <core/console.h>
+#include "sbi.h"
+
+#define _CONSOLE_LOG_SUBJECT "cpu"
+
+static bool svadu_enabled = false;
+
+void arch_cpu_init(size_t hart_id) {
+  (void)hart_id;
+
+  struct sbi_ret probe = sbi_probe_extension(SBI_EXT_FWFT);
+  if (probe.error == SBI_SUCCESS && probe.value != 0) {
+    struct sbi_ret ret = sbi_fwft_set(SBI_FWFT_PTE_AD_HW_UPDATING, 1, 0);
+    if (ret.error == SBI_SUCCESS) {
+      struct sbi_ret get_val = sbi_fwft_get(SBI_FWFT_PTE_AD_HW_UPDATING);
+      if (get_val.error == SBI_SUCCESS && get_val.value == 1) {
+        svadu_enabled = true;
+        console_log(_CONSOLE_LOG_SUBJECT,
+                    "Enabled Svadu (hardware PTE A/D updating).\n");
+        return;
+      }
+    }
+  }
+
+  console_log(_CONSOLE_LOG_SUBJECT,
+              "Svadu not available (software A/D updating).\n");
+}
+
+bool arch_has_svadu(void) {
+  return svadu_enabled;
+}
