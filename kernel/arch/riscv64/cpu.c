@@ -1,4 +1,5 @@
 #include <arch/cpu.h>
+#include <arch/trap.h>
 #include <core/console.h>
 #include "sbi.h"
 
@@ -8,6 +9,8 @@ static bool svadu_enabled = false;
 
 void arch_cpu_init(size_t hart_id) {
   (void)hart_id;
+
+  arch_trap_init();
 
   struct sbi_ret probe = sbi_probe_extension(SBI_EXT_FWFT);
   if (probe.error == SBI_SUCCESS && probe.value != 0) {
