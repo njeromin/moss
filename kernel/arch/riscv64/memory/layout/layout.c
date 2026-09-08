@@ -19,8 +19,3 @@ uintptr_t arch_phys_to_virt(uintptr_t phys) {
 uintptr_t arch_virt_to_phys(uintptr_t virt) {
   return virt - HHDM_BASE;
 }
-
-struct memory_region arch_boot_alloc_window(void) {
-  // Matches the bootstrap identity leaf in entry.S.
-  return (struct memory_region){.offset = 0x80000000ULL, .size = 0x40000000ULL};
-}

@@ -4,10 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Copy the discovery map into owned storage. Bounds describe a writable
-// identity mapping, with an exclusive end. Invalid input panics.
-void boot_alloc_init(struct memory_map* memory_map, uintptr_t mapped_start,
-                     uintptr_t mapped_end);
+// Copy the discovery map into owned storage. Invalid input panics.
+void boot_alloc_init(struct memory_map* memory_map);
 
 // Reserve bytes in available RAM; alignment must be a power of two.
 // Returns NULL on exhaustion, invalid arguments, or after the PMM handoff.

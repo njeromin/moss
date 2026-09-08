@@ -15,13 +15,10 @@ static struct memory_map boot_memory_map = {
     .reserved_capacity = BOOT_MEMORY_REGION_CAPACITY,
 };
 
-static uintptr_t allocation_start;
-static uintptr_t allocation_end;
 static int allocations_enabled;
 
-void boot_alloc_init(struct memory_map* memory_map, uintptr_t mapped_start,
-                     uintptr_t mapped_end) {
-  if (mapped_start >= mapped_end || memory_map == NULL ||
+void boot_alloc_init(struct memory_map* memory_map) {
+  if (memory_map == NULL ||
       memory_map->available_count > memory_map->available_capacity ||
       memory_map->reserved_count > memory_map->reserved_capacity ||
       (memory_map->available_count != 0 && memory_map->available == NULL) ||
@@ -47,8 +44,6 @@ void boot_alloc_init(struct memory_map* memory_map, uintptr_t mapped_start,
       kpanic("Overflowing reserved boot memory region.\n");
     }
   }
-  allocation_start = mapped_start;
-  allocation_end = mapped_end;
   allocations_enabled = 1;
 
   // Own the region data so the discovery map may live on the caller's stack.
@@ -85,12 +80,6 @@ void* boot_alloc(size_t size, size_t alignment) {
     }
     uintptr_t start = region.offset;
     uintptr_t end = start + region.size;
-    if (start < allocation_start) {
-      start = allocation_start;
-    }
-    if (end > allocation_end) {
-      end = allocation_end;
-    }
     // A null pointer cannot represent a successful allocation.
     if (start == 0) {
       start = 1;

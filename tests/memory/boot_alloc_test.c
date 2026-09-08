@@ -35,7 +35,7 @@ int main(void) {
       .reserved_capacity = 2,
   };
   assert(boot_alloc(1, 1) == NULL);
-  boot_alloc_init(&map, base, base + sizeof(ram));
+  boot_alloc_init(&map);
   // Mutating the discovery arrays must not affect the allocator's copy.
   reserved[0].size = 0;
   assert(boot_alloc(16, 64) == ram + 128);
@@ -46,12 +46,17 @@ int main(void) {
   assert(boot_alloc(SIZE_MAX, 8) == NULL);
 
   map.reserved_count = 0;
-  boot_alloc_init(&map, base + 256, base + 272);
+  struct memory_region small_region[] = {{.offset = base + 256, .size = 16}};
+  map.available = small_region;
+  map.available_count = map.available_capacity = 1;
+  boot_alloc_init(&map);
   assert(boot_alloc(16, 16) == ram + 256);
   assert(boot_alloc(1, 1) == NULL);
 
   // A full reservation array must fail without handing out untracked RAM.
-  boot_alloc_init(&map, base, base + sizeof(ram));
+  map.available = memory;
+  map.available_count = map.available_capacity = 1;
+  boot_alloc_init(&map);
   size_t capacity = boot_alloc_memory_map()->reserved_capacity;
   for (size_t i = 0; i < capacity; ++i) {
     assert(boot_alloc(1, 1) != NULL);
@@ -59,7 +64,7 @@ int main(void) {
   assert(boot_alloc(1, 1) == NULL);
 
   memory[0] = (struct memory_region){.offset = UINTPTR_MAX - 31, .size = 31};
-  boot_alloc_init(&map, UINTPTR_MAX - 31, UINTPTR_MAX);
+  boot_alloc_init(&map);
   assert(boot_alloc(1, 64) == NULL);
 
   // Two RAM regions: reserve all early metadata in both PMM bitmaps.
@@ -69,7 +74,7 @@ int main(void) {
   };
   map.available = regions;
   map.available_count = map.available_capacity = 2;
-  boot_alloc_init(&map, base, base + sizeof(ram));
+  boot_alloc_init(&map);
   assert(pmm_init() == PMM_OK);
   assert(boot_alloc(1, 1) == NULL);
   const struct memory_map* owned = boot_alloc_memory_map();

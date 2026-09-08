@@ -45,16 +45,26 @@ start:
   addi t0, t0, PTE_SIZE
   bltu t0, t1, .Lclear_boot_tables
 
-  // From here: t0 = root table, t1 = L1 table, t2 = PTE, t3 = slot address.
+  // From here: t0 = root table, t1 = loop counter / L1 table, t2 = PTE, t3 = slot address.
   la t0, boot_root
   // Root[2]: identity map 0x80000000..0xbfffffff with a 1 GiB leaf.
-  // Root[258]: HHDM direct map for 0x80000000..0xbfffffff.
   // V|R|W|X|A|D, supervisor only. Keep the bootstrap accessible.
   li t1, ((RAM_BASE >> PAGE_SHIFT) << PTE_PPN_SHIFT) | BOOT_LEAF_FLAGS
   sd t1, (IDENTITY_ROOT_SLOT * PTE_SIZE)(t0)
-  li t2, ((HHDM_ROOT_BASE_SLOT + IDENTITY_ROOT_SLOT) * PTE_SIZE)
-  add t2, t0, t2
-  sd t1, 0(t2)
+
+  // Direct-map physical RAM into the Higher-Half Direct Map (HHDM).
+  // Root slots 258..383 cover 128 GiB of physical space (gigapages 2..127).
+  li t1, 2
+  li t4, 128
+.Lmap_hhdm:
+  slli t2, t1, (GIGAPAGE_SHIFT - PAGE_SHIFT + PTE_PPN_SHIFT)
+  ori t2, t2, BOOT_LEAF_FLAGS
+  addi t3, t1, HHDM_ROOT_BASE_SLOT
+  slli t3, t3, 3
+  add t3, t0, t3
+  sd t2, 0(t3)
+  addi t1, t1, 1
+  bltu t1, t4, .Lmap_hhdm
 
   // Read the DTB prefix while addresses are still physical. a2 carries the
   // mapped buffer bound to C; zero makes validation reject an invalid prefix.

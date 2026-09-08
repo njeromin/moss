@@ -64,8 +64,7 @@ void init_virtual_memory(const struct device_discovery_info device_discovery) {
   console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT, "Highest address found: %p.\n",
               (void*)map.max_phys_addr);
 
-  struct memory_region window = arch_boot_alloc_window();
-  boot_alloc_init(&map, window.offset, window.offset + window.size);
+  boot_alloc_init(&map);
 
   int pmm_err;
   if ((pmm_err = pmm_init()) != PMM_OK) {

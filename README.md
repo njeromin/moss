@@ -21,7 +21,7 @@ mapping before removing the identity mapping. Device MMIO is not mapped yet.
 Only the OpenSBI boot hart may use this entry; secondary harts need another path.
 
 Early allocation copies the discovered memory map into static bookkeeping and
-reserves aligned allocations from RAM within the first 1 GiB identity mapping.
+reserves aligned allocations from available RAM mapped via the direct physical map (HHDM).
 There is no fixed linker arena. The DTB, firmware reservations, kernel, and
 bootstrap tables are excluded. The PMM allocates all descriptors and bitmaps
 before marking reservations, then disables early allocation. Its metadata must
