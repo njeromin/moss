@@ -21,6 +21,27 @@ uintptr_t arch_virt_to_phys(uintptr_t virt);
 extern const uintptr_t kernel_physical_start;
 extern const uintptr_t kernel_physical_end;
 
+// ELF segment boundaries emitted by the selected architecture's linker script.
+extern char text_start[];
+extern char text_end[];
+extern char rodata_start[];
+extern char rodata_end[];
+extern char data_start[];
+extern char data_end[];
+extern char bss_start[];
+extern char bss_end[];
+extern char stack_top[];
+extern char kernel_end[];
+
+extern char kernel_text_start[];
+extern char kernel_text_end[];
+extern char kernel_rodata_start[];
+extern char kernel_rodata_end[];
+extern char kernel_data_start[];
+extern char kernel_data_end[];
+extern char kernel_bss_start[];
+extern char kernel_bss_end[];
+
 enum arch_memory_map_error {
   ARCH_MEMORY_MAP_OK = 0,
   ARCH_MEMORY_MAP_INVALID = -1,

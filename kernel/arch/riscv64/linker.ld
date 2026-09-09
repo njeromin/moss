@@ -21,10 +21,17 @@ SECTIONS {
 
     . = KERNEL_VMA;
     .text : AT(KERNEL_LMA) {
+        text_start = .;
+        kernel_text_start = .;
         KEEP(*(.text.entry))
         *(.text .text.*)
+        . = ALIGN(4096);
+        text_end = .;
+        kernel_text_end = .;
     } :text
     .rodata ALIGN(4096) : AT(ADDR(.rodata) - KERNEL_VMA + KERNEL_LMA) {
+        rodata_start = .;
+        kernel_rodata_start = .;
         /* Store values in high memory so medany C can read the physical base. */
         kernel_virtual_base = .;
         QUAD(KERNEL_VMA)
@@ -37,22 +44,34 @@ SECTIONS {
         kernel_physical_start = .;
         QUAD(KERNEL_LMA)
         *(.rodata .rodata.* .srodata .srodata.*)
+        . = ALIGN(4096);
+        rodata_end = .;
+        kernel_rodata_end = .;
     } :rodata
     .data ALIGN(4096) : AT(ADDR(.data) - KERNEL_VMA + KERNEL_LMA) {
+        data_start = .;
+        kernel_data_start = .;
         *(.data .data.*)
         PROVIDE(__global_pointer$ = . + 0x800);
         *(.sdata .sdata.*)
         kernel_physical_end = .;
         QUAD(kernel_end - KERNEL_VMA + KERNEL_LMA)
+        . = ALIGN(4096);
+        data_end = .;
+        kernel_data_end = .;
     } :data
     .bss ALIGN(4096) (NOLOAD) : AT(ADDR(.bss) - KERNEL_VMA + KERNEL_LMA) {
         bss_start = .;
+        kernel_bss_start = .;
         *(.bss .bss.* .sbss .sbss.*)
         *(COMMON)
         . = ALIGN(16);
         bss_end = .;
+        kernel_bss_end = .;
         . += 16384;
+        . = ALIGN(16);
         stack_top = .;
+        . = ALIGN(4096);
     } :data
     kernel_end = .;
     ASSERT(kernel_end - KERNEL_VMA <= 0x200000,

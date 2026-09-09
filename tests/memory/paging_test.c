@@ -35,6 +35,20 @@ void paging_test(void) {
   unsigned permissions;
   struct page_status status;
   uintptr_t master = vmm_get_kernel_space()->root_phys;
+  // Verify W^X permissions on kernel segments
+  CHECK(arch_paging_query(master, (uintptr_t)text_start, &phys, &permissions) ==
+        PAGING_OK);
+  CHECK(permissions == (PAGE_READ | PAGE_EXEC));
+  CHECK(arch_paging_query(master, (uintptr_t)rodata_start, &phys, &permissions) ==
+        PAGING_OK);
+  CHECK(permissions == PAGE_READ);
+  CHECK(arch_paging_query(master, (uintptr_t)data_start, &phys, &permissions) ==
+        PAGING_OK);
+  CHECK(permissions == (PAGE_READ | PAGE_WRITE));
+  CHECK(arch_paging_query(master, (uintptr_t)bss_start, &phys, &permissions) ==
+        PAGING_OK);
+  CHECK(permissions == (PAGE_READ | PAGE_WRITE));
+
   uintptr_t shared = HHDM_BASE + 16 * GIB;
   CHECK(arch_paging_map_range(master, shared, 16 * GIB, GIB,
                               PAGE_READ | PAGE_WRITE) == PAGING_OK);

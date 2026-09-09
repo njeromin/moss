@@ -18,15 +18,57 @@ enum vmm_status vmm_init(void) {
     return VMM_ERROR;
   }
 
-  uintptr_t phys_start = kernel_physical_start;
-  uintptr_t phys_end = kernel_physical_end;
-  size_t kernel_size = align_up(phys_end - phys_start, PAGE_SIZE);
-  uintptr_t virt_start = arch_kernel_phys_to_virt(phys_start);
+  // Map kernel ELF segments individually with W^X protections:
+  //   .text:             PAGE_READ | PAGE_EXEC
+  //   .rodata:           PAGE_READ
+  //   .data:             PAGE_READ | PAGE_WRITE
+  //   .bss and stack:    PAGE_READ | PAGE_WRITE
+  uintptr_t text_vstart = align_down((uintptr_t)text_start, PAGE_SIZE);
+  uintptr_t text_vend = align_up((uintptr_t)text_end, PAGE_SIZE);
+  size_t text_size = text_vend - text_vstart;
+  if (text_size > 0) {
+    int err = vmm_map(&kernel_space, text_vstart,
+                      arch_kernel_virt_to_phys(text_vstart), text_size,
+                      PAGE_READ | PAGE_EXEC);
+    if (err != VMM_OK) {
+      return err;
+    }
+  }
 
-  int err = vmm_map(&kernel_space, virt_start, phys_start, kernel_size,
-                    PAGE_READ | PAGE_WRITE | PAGE_EXEC);
-  if (err != 0) {
-    return err;
+  uintptr_t rodata_vstart = align_down((uintptr_t)rodata_start, PAGE_SIZE);
+  uintptr_t rodata_vend = align_up((uintptr_t)rodata_end, PAGE_SIZE);
+  size_t rodata_size = rodata_vend - rodata_vstart;
+  if (rodata_size > 0) {
+    int err = vmm_map(&kernel_space, rodata_vstart,
+                      arch_kernel_virt_to_phys(rodata_vstart), rodata_size,
+                      PAGE_READ);
+    if (err != VMM_OK) {
+      return err;
+    }
+  }
+
+  uintptr_t data_vstart = align_down((uintptr_t)data_start, PAGE_SIZE);
+  uintptr_t data_vend = align_up((uintptr_t)data_end, PAGE_SIZE);
+  size_t data_size = data_vend - data_vstart;
+  if (data_size > 0) {
+    int err = vmm_map(&kernel_space, data_vstart,
+                      arch_kernel_virt_to_phys(data_vstart), data_size,
+                      PAGE_READ | PAGE_WRITE);
+    if (err != VMM_OK) {
+      return err;
+    }
+  }
+
+  uintptr_t bss_vstart = align_down((uintptr_t)bss_start, PAGE_SIZE);
+  uintptr_t bss_vend = align_up((uintptr_t)kernel_end, PAGE_SIZE);
+  size_t bss_size = bss_vend - bss_vstart;
+  if (bss_size > 0) {
+    int err = vmm_map(&kernel_space, bss_vstart,
+                      arch_kernel_virt_to_phys(bss_vstart), bss_size,
+                      PAGE_READ | PAGE_WRITE);
+    if (err != VMM_OK) {
+      return err;
+    }
   }
 
   arch_paging_switch_space(kernel_space.root_phys, 0);
