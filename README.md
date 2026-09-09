@@ -20,6 +20,22 @@ mappings with section-specific permissions and a deliberate physical-memory
 mapping before removing the identity mapping. Device MMIO is not mapped yet.
 Only the OpenSBI boot hart may use this entry; secondary harts need another path.
 
+At VMM initialization, the replacement root rebuilds the HHDM from discovered
+RAM within the existing 128 GiB physical-address window. It maps only complete
+RAM pages, excludes every page touched by a `NO_MAP` range, and keeps ordinary
+reserved RAM mapped so kernel and allocator metadata remain accessible. Direct
+mappings are supervisor read/write and non-executable. Core memory code selects
+the ranges and maps them through the VMM. RISC-V selects 1 GiB, 2 MiB, or
+4 KiB leaves according to alignment, range boundaries, and existing tables.
+Unmapping a 4 KiB page splits larger leaves while preserving neighboring mappings.
+When creating another address space, kernel 1 GiB leaves are demoted to shared
+2 MiB tables so later partial unmaps remain consistent across copied kernel roots.
+Accessed/dirty history from a split leaf is conservatively inherited by its children. The bootstrap HHDM stays active
+until the new root is ready; kernel section-specific permissions remain TODO.
+
+The direct-map builder has a standalone host test; its compile/run command is
+at the top of `tests/memory/direct_map_test.c`.
+
 Early allocation copies the discovered memory map into static bookkeeping and
 reserves aligned allocations from available RAM mapped via the direct physical map (HHDM).
 There is no fixed linker arena. The DTB, firmware reservations, kernel, and
@@ -115,3 +131,13 @@ Each populated build exports `compile_commands.json`. `.clangd` defaults to
 `build/riscv64-debug`; change that path to select another configuration. When a
 kernel ELF exists, use `gdb -ex 'file build/<preset>/kernel.elf'` to override the
 default executable loaded by `.gdbinit`.
+
+Optional RISC-V paging integration tests run inside QEMU after VMM initialization:
+
+```sh
+cmake --preset riscv64-debug -DOS_PAGING_TESTS=ON
+cmake --build --preset riscv64-debug --target run
+```
+
+They check large-leaf selection, mixed page sizes, translation and permissions,
+overlap rejection, and partial unmapping. Set `OS_PAGING_TESTS=OFF` to disable.

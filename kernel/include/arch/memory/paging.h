@@ -49,7 +49,14 @@ void arch_paging_switch_space(phys_addr_t root, size_t space_id);
 int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
                     unsigned permissions);
 
-// Unmap one base 4KiB page and flush TLB.
+// Map a page-aligned range using the largest supported, aligned leaves.
+// Existing branches may force smaller leaves. Synchronize once for the batch.
+// Failure may leave earlier pages mapped, as with repeated arch_paging_map calls.
+int arch_paging_map_range(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                          size_t size, unsigned permissions);
+
+// Unmap one base 4KiB page and flush TLB. Larger leaves are split as needed;
+// splitting can fail with PAGING_ERR_NOMEM while preserving translations.
 int arch_paging_unmap(phys_addr_t root, virt_addr_t virt);
 
 // Unmap one base 4KiB page, returning dynamic hardware status (accessed, dirty) and flush TLB.

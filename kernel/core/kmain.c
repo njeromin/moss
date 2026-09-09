@@ -52,6 +52,11 @@ void kmain(struct entry_info entry_info) {
 
   init_virtual_memory(entry_info.device_discovery);
 
+#ifdef OS_PAGING_TESTS
+  extern void paging_test(void);
+  paging_test();
+#endif
+
   console_log(_CONSOLE_LOG_SUBJECT, "Reached end of kmain.\n");
   arch_panic_halt();
 }

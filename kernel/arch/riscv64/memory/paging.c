@@ -8,7 +8,6 @@
 #define SV39_ROOT_ENTRIES 512
 #define SV39_USER_ENTRIES 256
 #define SV39_KERNEL_ENTRIES 256
-#define HHDM_ROOT_SLOT 256
 
 #define SATP_MODE_SV39 (8ULL << 60)
 #define SATP_ASID_SHIFT 44
@@ -40,41 +39,65 @@ static inline uint64_t phys_to_ppn(phys_addr_t pa) {
   return ((pa >> PAGE_SHIFT) << PTE_PPN_SHIFT);
 }
 
-static uint64_t* walk(phys_addr_t root, virt_addr_t virt, int alloc) {
+static size_t leaf_size(int level) {
+  return 1ULL << (PAGE_SHIFT + 9 * level);
+}
+
+// Find the largest empty leaf slot the request can use. Existing branches
+// force smaller leaves; existing mappings must never be overwritten.
+static int walk_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                    size_t remaining, uint64_t** out_pte, size_t* out_size) {
   uint64_t* table = (uint64_t*)arch_phys_to_virt(root);
-
-  // Traverse levels 2 and 1 down to level 0
-  for (int level = 2; level > 0; level--) {
-    size_t idx = vpn(virt, level);
-    uint64_t pte = table[idx];
-
-    if (pte & PTE_VALID) {
-      if (pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) {
-        // Leaf huge page already occupies this slot; cannot traverse further
-        return NULL;
+  for (int level = 2; level >= 0; --level) {
+    uint64_t* pte = &table[vpn(virt, level)];
+    uint64_t value = __atomic_load_n(pte, __ATOMIC_ACQUIRE);
+    size_t size = leaf_size(level);
+    if (value & PTE_VALID) {
+      if ((value & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) || level == 0) {
+        return PAGING_ERR_ALREADY_MAPPED;
       }
-      table = (uint64_t*)arch_phys_to_virt(pte_to_phys(pte));
     } else {
-      if (!alloc) {
-        return NULL;
+      if (remaining >= size && ((virt | phys) & (size - 1)) == 0) {
+        *out_pte = pte;
+        *out_size = size;
+        return PAGING_OK;
       }
-
-      // Allocate an intermediate page table frame
-      uintptr_t new_table_phys;
-      if (pmm_alloc(1, &new_table_phys) != PMM_OK) {
-        return NULL;
+      uintptr_t child;
+      if (pmm_alloc(1, &child) != PMM_OK) {
+        return PAGING_ERR_NOMEM;
       }
-
-      memory_set((void*)arch_phys_to_virt(new_table_phys), 0, PAGE_SIZE);
-
-      // Point current PTE to the new table (Valid, no R/W/X makes it a branch)
-      table[idx] = phys_to_ppn(new_table_phys) | PTE_VALID;
-      table = (uint64_t*)arch_phys_to_virt(new_table_phys);
+      memory_set((void*)arch_phys_to_virt(child), 0, PAGE_SIZE);
+      value = phys_to_ppn(child) | PTE_VALID;
+      __atomic_store_n(pte, value, __ATOMIC_RELEASE);
     }
+    table = (uint64_t*)arch_phys_to_virt(pte_to_phys(value));
   }
+  return PAGING_ERR_INVALID_ARG;
+}
 
-  // Return a pointer to the Level 0 PTE
-  return &table[vpn(virt, 0)];
+// Preserve translation, permissions and conservative A/D history while
+// replacing a large leaf with 512 smaller leaves. Callers serialize software
+// page-table changes; CAS also preserves concurrent hardware A/D updates.
+static int split_leaf(uint64_t* pte, int level) {
+  uintptr_t child;
+  if (pmm_alloc(1, &child) != PMM_OK) {
+    return PAGING_ERR_NOMEM;
+  }
+  uint64_t* table = (uint64_t*)arch_phys_to_virt(child);
+  uint64_t old = __atomic_load_n(pte, __ATOMIC_ACQUIRE);
+  uint64_t branch = phys_to_ppn(child) | PTE_VALID;
+  do {
+    uintptr_t base = pte_to_phys(old);
+    uint64_t flags = old & ((1ULL << PTE_PPN_SHIFT) - 1);
+    for (size_t i = 0; i < SV39_ROOT_ENTRIES; ++i) {
+      table[i] = phys_to_ppn(base + i * leaf_size(level - 1)) | flags;
+    }
+  } while (!__atomic_compare_exchange_n(pte, &old, branch, false,
+                                        __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE));
+  // Flush the old large translation before removing any child. Keeping the
+  // replacement valid also allows splitting the HHDM containing these tables.
+  arch_paging_flush_all();
+  return PAGING_OK;
 }
 
 // Traverse page table to locate the leaf PTE (level 2 huge, level 1 large, or level 0 base page)
@@ -120,16 +143,6 @@ int arch_paging_create_space(phys_addr_t* out_root) {
     // Zero out all 512 entries
     memory_set(root_table, 0, PAGE_SIZE);
 
-    // Direct-map physical RAM into the Higher-Half Direct Map (HHDM)
-    // Root slots 256..383 cover 128 GiB of physical space.
-    // DRAM starts at 0x80000000 (gigapage 2 -> slot 258).
-    uint64_t hhdm_flags =
-        PTE_VALID | PTE_READ | PTE_WRITE | PTE_ACCESSED | PTE_DIRTY;
-    for (size_t g = 2; g < 128; g++) {
-      size_t slot = HHDM_ROOT_SLOT + g;
-      root_table[slot] = phys_to_ppn((phys_addr_t)g << 30) | hhdm_flags;
-    }
-
     // Save as the template for future user spaces
     master_kernel_root = phys;
   } else {
@@ -138,6 +151,19 @@ int arch_paging_create_space(phys_addr_t* out_root) {
 
     // Share kernel mappings by copying the top-level kernel entries (slots 256..511)
     uint64_t* kernel_table = (uint64_t*)arch_phys_to_virt(master_kernel_root);
+    // Root entries are copied, but lower tables are shared. Demote kernel
+    // root leaves before copying so later partial unmaps update a shared table
+    // rather than replacing a root entry in only one address space.
+    for (size_t i = SV39_USER_ENTRIES; i < SV39_ROOT_ENTRIES; ++i) {
+      uint64_t pte = kernel_table[i];
+      if ((pte & PTE_VALID) && (pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
+        int result = split_leaf(&kernel_table[i], 2);
+        if (result != PAGING_OK) {
+          pmm_free(phys, 1);
+          return result;
+        }
+      }
+    }
     memory_copy(&root_table[SV39_USER_ENTRIES],
                 &kernel_table[SV39_USER_ENTRIES],
                 SV39_KERNEL_ENTRIES * sizeof(uint64_t));
@@ -199,19 +225,21 @@ void arch_paging_switch_space(phys_addr_t root, size_t space_id) {
       : "memory");
 }
 
-int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
-                    unsigned permissions) {
+static int map_leaf(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                     size_t remaining, unsigned permissions, size_t* mapped) {
   if ((virt & PAGE_MASK) != 0 || (phys & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
 
-  uint64_t* pte = walk(root, virt, 1);
-  if (pte == NULL) {
-    return PAGING_ERR_NOMEM;
+  if (!(permissions & (PAGE_READ | PAGE_EXEC)) ||
+      ((permissions & PAGE_WRITE) && !(permissions & PAGE_READ))) {
+    return PAGING_ERR_INVALID_ARG;
   }
 
-  if (*pte & PTE_VALID) {
-    return PAGING_ERR_ALREADY_MAPPED;
+  uint64_t* pte;
+  int result = walk_map(root, virt, phys, remaining, &pte, mapped);
+  if (result != PAGING_OK) {
+    return result;
   }
 
   uint64_t flags = PTE_VALID;
@@ -251,8 +279,40 @@ int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
   }
 
   __atomic_store_n(pte, phys_to_ppn(phys) | flags, __ATOMIC_RELEASE);
-  arch_paging_flush_page(virt);
   return PAGING_OK;
+}
+
+int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                    unsigned permissions) {
+  if (root == 0) return PAGING_ERR_INVALID_ARG;
+  size_t mapped;
+  int result = map_leaf(root, virt, phys, PAGE_SIZE, permissions, &mapped);
+  arch_paging_flush_all();
+  return result;
+}
+
+int arch_paging_map_range(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                          size_t size, unsigned permissions) {
+  if (root == 0 || size == 0 || (virt & PAGE_MASK) || (phys & PAGE_MASK) ||
+      (size & PAGE_MASK) || size > UINTPTR_MAX - virt ||
+      size > UINTPTR_MAX - phys) {
+    return PAGING_ERR_INVALID_ARG;
+  }
+
+  int result = PAGING_OK;
+  for (size_t offset = 0; offset < size;) {
+    size_t mapped;
+    result = map_leaf(root, virt + offset, phys + offset, size - offset,
+                      permissions, &mapped);
+    if (result != PAGING_OK) {
+      break;
+    }
+    offset += mapped;
+  }
+  // Publish the whole batch, including new intermediate tables. Flush even
+  // on failure because earlier pages (or intermediate tables) may be installed.
+  arch_paging_flush_all();
+  return result;
 }
 
 static inline int is_table_empty(const uint64_t* table) {
@@ -267,6 +327,7 @@ static inline int is_table_empty(const uint64_t* table) {
 int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
                           struct page_status* out_status,
                           phys_addr_t* out_phys) {
+  if (root == 0) return PAGING_ERR_INVALID_ARG;
   if ((virt & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
@@ -274,16 +335,26 @@ int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
   uint64_t* table2 = (uint64_t*)arch_phys_to_virt(root);
   size_t idx2 = vpn(virt, 2);
   uint64_t pte2 = __atomic_load_n(&table2[idx2], __ATOMIC_ACQUIRE);
-  if (!(pte2 & PTE_VALID) || (pte2 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
+  if (!(pte2 & PTE_VALID)) {
     return PAGING_ERR_NOT_MAPPED;
+  }
+  if (pte2 & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) {
+    int result = split_leaf(&table2[idx2], 2);
+    if (result != PAGING_OK) return result;
+    pte2 = __atomic_load_n(&table2[idx2], __ATOMIC_ACQUIRE);
   }
 
   phys_addr_t table1_phys = pte_to_phys(pte2);
   uint64_t* table1 = (uint64_t*)arch_phys_to_virt(table1_phys);
   size_t idx1 = vpn(virt, 1);
   uint64_t pte1 = __atomic_load_n(&table1[idx1], __ATOMIC_ACQUIRE);
-  if (!(pte1 & PTE_VALID) || (pte1 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
+  if (!(pte1 & PTE_VALID)) {
     return PAGING_ERR_NOT_MAPPED;
+  }
+  if (pte1 & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) {
+    int result = split_leaf(&table1[idx1], 1);
+    if (result != PAGING_OK) return result;
+    pte1 = __atomic_load_n(&table1[idx1], __ATOMIC_ACQUIRE);
   }
 
   phys_addr_t table0_phys = pte_to_phys(pte1);
@@ -316,9 +387,10 @@ int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
   if (is_table_empty(table0)) {
     __atomic_exchange_n(&table1[idx1], 0, __ATOMIC_SEQ_CST);
 
-    // Prune Level 1 table if empty (never prune shared kernel entries in user spaces)
+    // Kernel root entries may have been copied to other spaces. Keep their
+    // shared Level 1 tables alive, including when operating on the master.
     int is_shared_kernel_slot =
-        (root != master_kernel_root) && (idx2 >= SV39_USER_ENTRIES);
+        (idx2 >= SV39_USER_ENTRIES);
     bool prune_l1 = false;
     if (!is_shared_kernel_slot && is_table_empty(table1)) {
       __atomic_exchange_n(&table2[idx2], 0, __ATOMIC_SEQ_CST);
