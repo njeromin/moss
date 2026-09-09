@@ -2,6 +2,7 @@
 
 #include "./paging_hw.h"
 #include <arch/cpu.h>
+#include <arch/hw_features.h>
 #include <arch/memory/layout.h>
 #include <arch/memory/paging_info.h>
 #include <common/memory.h>

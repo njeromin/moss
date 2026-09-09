@@ -14,7 +14,7 @@ static inline bool spin_lock_irqsave(struct spinlock* lock) {
   arch_interrupts_disable();
   while (__atomic_exchange_n(&lock->held, 1, __ATOMIC_ACQUIRE)) {
     while (__atomic_load_n(&lock->held, __ATOMIC_RELAXED)) {
-      __asm__ volatile("" ::: "memory");
+      arch_cpu_relax();
     }
   }
   return enabled;

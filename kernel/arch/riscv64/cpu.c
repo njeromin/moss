@@ -1,5 +1,7 @@
-#include "sbi.h"
 #include <arch/cpu.h>
+#include <arch/hw_features.h>  // Needed as this implements arch_has_svadu()
+
+#include "sbi.h"
 #include <arch/trap.h>
 #include <core/console.h>
 
@@ -48,6 +50,10 @@ void arch_cpu_init(size_t hart_id) {
   } else {
     console_log(_CONSOLE_LOG_SUBJECT, "SBI FWFT extension not available.\n");
   }
+}
+
+void arch_cpu_relax(void) {
+  __asm__ volatile(".insn i 0x0F, 0, x0, x0, 0x010" ::: "memory");
 }
 
 bool arch_has_svadu(void) {
