@@ -18,6 +18,7 @@ struct pmm_region {
   uintptr_t base;
   size_t frame_count;
   uint8_t* bitmap;
+  size_t cursor;
 };
 
 enum pmm_result {
