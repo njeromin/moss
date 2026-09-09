@@ -42,7 +42,7 @@ enum vmm_status vmm_map(struct vmm_space* space, uintptr_t virt, uintptr_t phys,
     int res =
         arch_paging_map(space->root_phys, virt + offset, phys + offset, flags);
     if (res != PAGING_OK) {
-      return res;
+      return VMM_ERROR;
     }
   }
 
@@ -68,14 +68,24 @@ enum vmm_status vmm_unmap(struct vmm_space* space, uintptr_t virt,
   for (size_t offset = 0; offset < size; offset += PAGE_SIZE) {
     int res = arch_paging_unmap(space->root_phys, virt + offset);
 
-    // Depending on your policy:
-    // If you want POSIX munmap behavior (allowing holes/unmapped pages in range):
-    // if (res != PAGING_OK && res != PAGING_ERR_NOT_MAPPED) return res;
-
     // Strict behavior: fail if any page in the range wasn't mapped
     if (res != PAGING_OK) {
-      return res;
+      return VMM_ERROR;
     }
+  }
+
+  return VMM_OK;
+}
+
+enum vmm_status vmm_unmap_page(struct vmm_space* space, virt_addr_t virt,
+                               struct page_status* out_status) {
+  if (space == NULL || (virt & PAGE_MASK) != 0) {
+    return VMM_ERROR;
+  }
+
+  int res = arch_paging_unmap_get_status(space->root_phys, virt, out_status);
+  if (res != PAGING_OK) {
+    return VMM_ERROR;
   }
 
   return VMM_OK;
@@ -90,7 +100,7 @@ enum vmm_status vmm_translate(const struct vmm_space* space, uintptr_t virt,
   // Query the hardware page table; we pass NULL for permissions since we only want phys
   int res = arch_paging_query(space->root_phys, virt, phys, NULL);
   if (res != PAGING_OK) {
-    return res;
+    return VMM_ERROR;
   }
 
   return VMM_OK;

@@ -52,6 +52,15 @@ int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
 // Unmap one base 4KiB page and flush TLB.
 int arch_paging_unmap(phys_addr_t root, virt_addr_t virt);
 
+// Unmap one base 4KiB page, returning dynamic hardware status (accessed, dirty) and flush TLB.
+int arch_paging_unmap_get_status(phys_addr_t root, virt_addr_t virt,
+                                 struct page_status* out_status);
+
+// Unmap one base 4KiB page, returning dynamic hardware status and the mapped physical address, and flush TLB.
+int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
+                          struct page_status* out_status,
+                          phys_addr_t* out_phys);
+
 // Query translation and permissions for a virtual address.
 int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
                       unsigned* out_permissions);

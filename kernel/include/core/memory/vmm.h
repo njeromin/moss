@@ -23,5 +23,8 @@ enum vmm_status vmm_map(struct vmm_space* space, virt_addr_t virt,
 enum vmm_status vmm_unmap(struct vmm_space* space, virt_addr_t virt,
                           size_t size);
 
+enum vmm_status vmm_unmap_page(struct vmm_space* space, virt_addr_t virt,
+                               struct page_status* out_status);
+
 enum vmm_status vmm_translate(const struct vmm_space* space, virt_addr_t virt,
                               phys_addr_t* phys);

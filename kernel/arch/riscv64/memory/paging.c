@@ -84,16 +84,17 @@ static uint64_t* walk_leaf(phys_addr_t root, virt_addr_t virt) {
   for (int level = 2; level >= 0; level--) {
     size_t idx = vpn(virt, level);
     uint64_t* pte = &table[idx];
+    uint64_t pte_val = __atomic_load_n(pte, __ATOMIC_ACQUIRE);
 
-    if (!(*pte & PTE_VALID)) {
+    if (!(pte_val & PTE_VALID)) {
       return NULL;
     }
 
-    if ((*pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) || level == 0) {
+    if ((pte_val & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) || level == 0) {
       return pte;
     }
 
-    table = (uint64_t*)arch_phys_to_virt(pte_to_phys(*pte));
+    table = (uint64_t*)arch_phys_to_virt(pte_to_phys(pte_val));
   }
 
   return NULL;
@@ -150,6 +151,8 @@ void arch_paging_destroy_space(phys_addr_t root) {
   if (root == 0 || root == master_kernel_root) {
     return;
   }
+
+  arch_paging_flush_all();
 
   uint64_t* table2 = (uint64_t*)arch_phys_to_virt(root);
 
@@ -247,28 +250,30 @@ int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
     }
   }
 
-  *pte = phys_to_ppn(phys) | flags;
+  __atomic_store_n(pte, phys_to_ppn(phys) | flags, __ATOMIC_RELEASE);
   arch_paging_flush_page(virt);
   return PAGING_OK;
 }
 
 static inline int is_table_empty(const uint64_t* table) {
   for (size_t i = 0; i < SV39_ROOT_ENTRIES; i++) {
-    if (table[i] != 0) {
+    if (__atomic_load_n(&table[i], __ATOMIC_RELAXED) != 0) {
       return 0;
     }
   }
   return 1;
 }
 
-int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
+int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
+                          struct page_status* out_status,
+                          phys_addr_t* out_phys) {
   if ((virt & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
 
   uint64_t* table2 = (uint64_t*)arch_phys_to_virt(root);
   size_t idx2 = vpn(virt, 2);
-  uint64_t pte2 = table2[idx2];
+  uint64_t pte2 = __atomic_load_n(&table2[idx2], __ATOMIC_ACQUIRE);
   if (!(pte2 & PTE_VALID) || (pte2 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
     return PAGING_ERR_NOT_MAPPED;
   }
@@ -276,7 +281,7 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
   phys_addr_t table1_phys = pte_to_phys(pte2);
   uint64_t* table1 = (uint64_t*)arch_phys_to_virt(table1_phys);
   size_t idx1 = vpn(virt, 1);
-  uint64_t pte1 = table1[idx1];
+  uint64_t pte1 = __atomic_load_n(&table1[idx1], __ATOMIC_ACQUIRE);
   if (!(pte1 & PTE_VALID) || (pte1 & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
     return PAGING_ERR_NOT_MAPPED;
   }
@@ -284,30 +289,62 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
   phys_addr_t table0_phys = pte_to_phys(pte1);
   uint64_t* table0 = (uint64_t*)arch_phys_to_virt(table0_phys);
   size_t idx0 = vpn(virt, 0);
-  uint64_t pte0 = table0[idx0];
-  if (!(pte0 & PTE_VALID)) {
+
+  // Atomically clear the leaf entry. This ensures race-free unmapping when
+  // hardware Svadu A/D updates occur concurrently, while capturing the final
+  // dynamic Accessed and Dirty state.
+  uint64_t old_pte = __atomic_exchange_n(&table0[idx0], 0, __ATOMIC_SEQ_CST);
+  if (!(old_pte & PTE_VALID)) {
     return PAGING_ERR_NOT_MAPPED;
   }
 
-  // Clear the leaf 4 KiB entry and invalidate the TLB for this virtual address
-  table0[idx0] = 0;
+  // Invalidate the TLB entry for this virtual address
   arch_paging_flush_page(virt);
+
+  // Return dynamic Accessed/Dirty status if requested
+  if (out_status != NULL) {
+    out_status->accessed = (old_pte & PTE_ACCESSED) != 0;
+    out_status->dirty = (old_pte & PTE_DIRTY) != 0;
+  }
+
+  // Return physical address if requested
+  if (out_phys != NULL) {
+    *out_phys = pte_to_phys(old_pte);
+  }
 
   // Prune Level 0 table if it has no remaining entries
   if (is_table_empty(table0)) {
-    table1[idx1] = 0;
-    pmm_free(table0_phys, 1);
+    __atomic_exchange_n(&table1[idx1], 0, __ATOMIC_SEQ_CST);
 
     // Prune Level 1 table if empty (never prune shared kernel entries in user spaces)
     int is_shared_kernel_slot =
         (root != master_kernel_root) && (idx2 >= SV39_USER_ENTRIES);
+    bool prune_l1 = false;
     if (!is_shared_kernel_slot && is_table_empty(table1)) {
-      table2[idx2] = 0;
+      __atomic_exchange_n(&table2[idx2], 0, __ATOMIC_SEQ_CST);
+      prune_l1 = true;
+    }
+
+    // Invalidate non-leaf translation caches before returning table frames to PMM
+    // to prevent hardware walkers from using stale page table hierarchy entries.
+    arch_paging_flush_all();
+
+    pmm_free(table0_phys, 1);
+    if (prune_l1) {
       pmm_free(table1_phys, 1);
     }
   }
 
   return PAGING_OK;
+}
+
+int arch_paging_unmap_get_status(phys_addr_t root, virt_addr_t virt,
+                                 struct page_status* out_status) {
+  return arch_paging_unmap_ext(root, virt, out_status, NULL);
+}
+
+int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
+  return arch_paging_unmap_ext(root, virt, NULL, NULL);
 }
 
 int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
@@ -363,12 +400,17 @@ int arch_paging_get_status(phys_addr_t root, virt_addr_t virt,
   }
 
   uint64_t* pte = walk_leaf(root, virt);
-  if (pte == NULL || !(*pte & PTE_VALID)) {
+  if (pte == NULL) {
     return PAGING_ERR_NOT_MAPPED;
   }
 
-  out_status->accessed = (*pte & PTE_ACCESSED) != 0;
-  out_status->dirty = (*pte & PTE_DIRTY) != 0;
+  uint64_t pte_val = __atomic_load_n(pte, __ATOMIC_ACQUIRE);
+  if (!(pte_val & PTE_VALID)) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
+  out_status->accessed = (pte_val & PTE_ACCESSED) != 0;
+  out_status->dirty = (pte_val & PTE_DIRTY) != 0;
   return PAGING_OK;
 }
 
@@ -379,7 +421,7 @@ int arch_paging_clear_status(phys_addr_t root, virt_addr_t virt,
   }
 
   uint64_t* pte = walk_leaf(root, virt);
-  if (pte == NULL || !(*pte & PTE_VALID)) {
+  if (pte == NULL) {
     return PAGING_ERR_NOT_MAPPED;
   }
 
@@ -391,7 +433,12 @@ int arch_paging_clear_status(phys_addr_t root, virt_addr_t virt,
     pte_mask |= PTE_DIRTY;
   }
 
-  *pte &= ~pte_mask;
+  // Atomically clear status bits without clobbering concurrent hardware Svadu updates
+  uint64_t old = __atomic_fetch_and(pte, ~pte_mask, __ATOMIC_SEQ_CST);
+  if (!(old & PTE_VALID)) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
   arch_paging_flush_page(virt);
   return PAGING_OK;
 }
@@ -403,7 +450,7 @@ int arch_paging_set_status(phys_addr_t root, virt_addr_t virt,
   }
 
   uint64_t* pte = walk_leaf(root, virt);
-  if (pte == NULL || !(*pte & PTE_VALID)) {
+  if (pte == NULL) {
     return PAGING_ERR_NOT_MAPPED;
   }
 
@@ -415,7 +462,12 @@ int arch_paging_set_status(phys_addr_t root, virt_addr_t virt,
     pte_bits |= PTE_DIRTY;
   }
 
-  *pte |= pte_bits;
+  // Atomically set status bits
+  uint64_t old = __atomic_fetch_or(pte, pte_bits, __ATOMIC_SEQ_CST);
+  if (!(old & PTE_VALID)) {
+    return PAGING_ERR_NOT_MAPPED;
+  }
+
   arch_paging_flush_page(virt);
   return PAGING_OK;
 }
