@@ -1,3 +1,4 @@
+#include <arch/timer.h>
 #include <arch/trap.h>
 #include <core/console.h>
 #include <core/panic.h>
@@ -101,6 +102,11 @@ void arch_trap_handler(struct trap_frame* tf) {
   uint64_t code = tf->scause & ~(1ULL << 63);
 
   if (is_interrupt) {
+    if (code == 5) {
+      arch_timer_handle_interrupt(tf);
+      return;
+    }
+
     const char* name = interrupt_name(code);
     console_log(_CONSOLE_LOG_SUBJECT, "Unhandled interrupt: %s (%zu)\n", name,
                 (size_t)code);

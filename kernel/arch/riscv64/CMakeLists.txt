@@ -19,5 +19,6 @@ list(APPEND KERNEL_SOURCES
     arch/riscv64/memory/paging.c
     arch/riscv64/memory/layout/layout.c
     arch/riscv64/memory/layout/memory_map.c
+    arch/riscv64/timer.c
     arch/riscv64/tempconsole.c
 )

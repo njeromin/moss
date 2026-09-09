@@ -33,3 +33,19 @@ void arch_cpu_init(size_t hart_id) {
 bool arch_has_svadu(void) {
   return svadu_enabled;
 }
+
+#define SSTATUS_SIE (1ULL << 1)
+
+void arch_interrupts_enable(void) {
+  __asm__ volatile("csrs sstatus, %0" : : "r"(SSTATUS_SIE) : "memory");
+}
+
+void arch_interrupts_disable(void) {
+  __asm__ volatile("csrc sstatus, %0" : : "r"(SSTATUS_SIE) : "memory");
+}
+
+bool arch_interrupts_enabled(void) {
+  uint64_t sstatus;
+  __asm__ volatile("csrr %0, sstatus" : "=r"(sstatus));
+  return (sstatus & SSTATUS_SIE) != 0;
+}
