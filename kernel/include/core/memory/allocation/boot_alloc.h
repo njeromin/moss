@@ -4,8 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Copy the discovery map into owned storage. Invalid input panics.
-void boot_alloc_init(struct memory_map* memory_map);
+// Initialise the boot allocator. Invalid memory map panics.
+void boot_alloc_init(void);
 
 // Reserve bytes in available RAM; alignment must be a power of two.
 // Returns NULL on exhaustion, invalid arguments, or after the PMM handoff.

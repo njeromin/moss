@@ -1,66 +1,34 @@
 #include <core/memory/allocation/boot_alloc.h>
 
 #include <common/memory.h>
+#include <core/memory/map.h>
 #include <core/panic.h>
 
-#define BOOT_MEMORY_REGION_CAPACITY 64
+static int allocations_enabled = 0;
 
-static struct memory_region available[BOOT_MEMORY_REGION_CAPACITY];
-static struct memory_region reserved[BOOT_MEMORY_REGION_CAPACITY];
-
-static struct memory_map boot_memory_map = {
-    .available = available,
-    .available_capacity = BOOT_MEMORY_REGION_CAPACITY,
-    .reserved = reserved,
-    .reserved_capacity = BOOT_MEMORY_REGION_CAPACITY,
-};
-
-static int allocations_enabled;
-
-void boot_alloc_init(struct memory_map* memory_map) {
-  if (memory_map == NULL ||
-      memory_map->available_count > memory_map->available_capacity ||
-      memory_map->reserved_count > memory_map->reserved_capacity ||
-      (memory_map->available_count != 0 && memory_map->available == NULL) ||
-      (memory_map->reserved_count != 0 && memory_map->reserved == NULL)) {
+void boot_alloc_init(void) {
+  const struct memory_map* map = memory_map_get();
+  if (map == NULL || map->available_count == 0) {
     kpanic("Invalid memory map for boot allocator.\n");
     return;
   }
-  if (memory_map->available_count > BOOT_MEMORY_REGION_CAPACITY ||
-      memory_map->reserved_count > BOOT_MEMORY_REGION_CAPACITY) {
-    kpanic("Too many memory regions for boot allocator.\n");
-    return;
-  }
 
-  for (size_t i = 0; i < memory_map->available_count; ++i) {
-    if (memory_map->available[i].size >
-        UINTPTR_MAX - memory_map->available[i].offset) {
+  for (size_t i = 0; i < map->available_count; ++i) {
+    if (map->available[i].size > UINTPTR_MAX - map->available[i].offset) {
       kpanic("Overflowing available boot memory region.\n");
     }
   }
-  for (size_t i = 0; i < memory_map->reserved_count; ++i) {
-    if (memory_map->reserved[i].size >
-        UINTPTR_MAX - memory_map->reserved[i].offset) {
+  for (size_t i = 0; i < map->reserved_count; ++i) {
+    if (map->reserved[i].size > UINTPTR_MAX - map->reserved[i].offset) {
       kpanic("Overflowing reserved boot memory region.\n");
     }
   }
-  allocations_enabled = 1;
 
-  // Own the region data so the discovery map may live on the caller's stack.
-  for (size_t i = 0; i < memory_map->available_count; ++i) {
-    available[i] = memory_map->available[i];
-  }
-  for (size_t i = 0; i < memory_map->reserved_count; ++i) {
-    reserved[i] = memory_map->reserved[i];
-  }
-  boot_memory_map.available_count = memory_map->available_count;
-  boot_memory_map.reserved_count = memory_map->reserved_count;
-  boot_memory_map.min_phys_addr = memory_map->min_phys_addr;
-  boot_memory_map.max_phys_addr = memory_map->max_phys_addr;
+  allocations_enabled = 1;
 }
 
 const struct memory_map* boot_alloc_memory_map(void) {
-  return &boot_memory_map;
+  return memory_map_get();
 }
 
 void boot_alloc_finish(void) {
@@ -73,8 +41,10 @@ void* boot_alloc(size_t size, size_t alignment) {
     return NULL;
   }
 
-  for (size_t i = 0; i < boot_memory_map.available_count; ++i) {
-    struct memory_region region = available[i];
+  const struct memory_map* map = memory_map_get();
+
+  for (size_t i = 0; i < map->available_count; ++i) {
+    struct memory_region region = map->available[i];
     if (region.flags & (MEMORY_REGION_RESERVED | MEMORY_REGION_NO_MAP)) {
       continue;
     }
@@ -92,8 +62,8 @@ void* boot_alloc(size_t size, size_t alignment) {
       }
       uintptr_t candidate_end = candidate + size;
       size_t j;
-      for (j = 0; j < boot_memory_map.reserved_count; ++j) {
-        struct memory_region reservation = reserved[j];
+      for (j = 0; j < map->reserved_count; ++j) {
+        struct memory_region reservation = map->reserved[j];
         uintptr_t reserved_end = reservation.offset + reservation.size;
         if (reservation.size != 0 && candidate < reserved_end &&
             reservation.offset < candidate_end) {
@@ -101,18 +71,20 @@ void* boot_alloc(size_t size, size_t alignment) {
           break;
         }
       }
-      if (j != boot_memory_map.reserved_count) {
+      if (j != map->reserved_count) {
         continue;
       }
 
-      if (boot_memory_map.reserved_count == boot_memory_map.reserved_capacity) {
-        return NULL;
-      }
-      reserved[boot_memory_map.reserved_count++] = (struct memory_region){
+      struct memory_region new_reservation = {
           .offset = candidate,
           .size = size,
           .flags = MEMORY_REGION_RESERVED,
       };
+
+      if (memory_map_add_reserved(new_reservation) != 0) {
+        return NULL;
+      }
+
       return (void*)candidate;
     }
   }
