@@ -57,6 +57,10 @@ endif()
 add_subdirectory(kernel)
 add_subdirectory(userspace)
 
+if(OS_ARCH STREQUAL "riscv64")
+    add_subdirectory(tests/memory)
+endif()
+
 option(OS_BUILD_CHECKS "Build a freestanding C/assembly toolchain check" OFF)
 if(OS_BUILD_CHECKS)
     add_subdirectory(tests/build)

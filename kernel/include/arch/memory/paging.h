@@ -36,10 +36,16 @@ enum paging_result {
   PAGING_ERR_INVALID_ARG = -5,
 };
 
+// Operations are serialised across roots, including shared kernel mappings.
+// Range operations hold the lock for the entire range (including partial failure).
+// Callers retain ownership of address-space handles and mapped data frames;
+// a translation query does not pin the returned physical frame.
+
 // Create a new address space root table with shared kernel mappings copied in.
 int arch_paging_create_space(phys_addr_t* out_root);
 
 // Free an address space and its non-kernel intermediate page tables.
+// Caller must first switch every hart away and prevent further use of this root.
 void arch_paging_destroy_space(phys_addr_t root);
 
 // Switch the hardware MMU to the given root (e.g. writes satp on RISC-V).
@@ -50,7 +56,7 @@ int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
                     unsigned permissions);
 
 // Map a page-aligned range using the largest supported, aligned leaves.
-// Existing branches may force smaller leaves. Synchronize once for the batch.
+// Existing branches may force smaller leaves. Synchronise once for the batch.
 // Failure may leave earlier pages mapped, as with repeated arch_paging_map calls.
 int arch_paging_map_range(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
                           size_t size, unsigned permissions);
@@ -84,8 +90,15 @@ int arch_paging_clear_status(phys_addr_t root, virt_addr_t virt,
 int arch_paging_set_status(phys_addr_t root, virt_addr_t virt,
                            unsigned status_flags);
 
-// Invalidate the TLB entry for a single page (used after unmap or permission change)
+// Complete local and remote invalidation before returning. Currently both
+// flush functions conservatively invalidate all addresses and ASIDs.
+// Requires SBI RFENCE; an incomplete shootdown is fatal.
+// Invalidate translations covering a page (used after unmap or permission change)
 void arch_paging_flush_page(virt_addr_t virt);
 
 // Invalidate all TLB entries (used when switching address spaces or tearing down a space)
 void arch_paging_flush_all(void);
+
+// Serialize an entire unmap range against mapping/query operations. Partial
+// failure semantics match repeated unmaps; prior changes are not rolled back.
+int arch_paging_unmap_range(phys_addr_t root, virt_addr_t virt, size_t size);

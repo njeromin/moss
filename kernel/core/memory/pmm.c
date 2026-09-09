@@ -6,7 +6,10 @@
 #include "core/memory/regions.h"
 #include <arch/memory/layout.h>
 
+#include <core/sync/spinlock.h>
+
 static struct pmm_ctx pmm;
+static struct spinlock pmm_lock;
 
 static enum pmm_frame_state frame_state(const uint8_t* bitmap, size_t frame) {
   size_t bit = frame * 2;
@@ -199,7 +202,7 @@ static enum pmm_result find_free_run(const struct pmm_region* region,
   return PMM_ERROR_NO_FREE_FRAME;
 }
 
-enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr) {
+static enum pmm_result pmm_alloc_locked(size_t frames, uintptr_t* out_ptr) {
   if (out_ptr == 0 || frames == 0) {
     return PMM_ERROR_INVALID_INPUT;
   }
@@ -253,7 +256,7 @@ static struct pmm_region* find_region(uintptr_t base, size_t frames) {
   return 0;
 }
 
-enum pmm_result pmm_free(uintptr_t base, size_t frames) {
+static enum pmm_result pmm_free_locked(uintptr_t base, size_t frames) {
   if ((base % PMM_FRAME_SIZE) != 0) {
     return PMM_ERROR_INVALID_INPUT;
   }
@@ -278,4 +281,18 @@ enum pmm_result pmm_free(uintptr_t base, size_t frames) {
   }
 
   return PMM_OK;
+}
+
+enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr) {
+  bool irq = spin_lock_irqsave(&pmm_lock);
+  enum pmm_result result = pmm_alloc_locked(frames, out_ptr);
+  spin_unlock_irqrestore(&pmm_lock, irq);
+  return result;
+}
+
+enum pmm_result pmm_free(uintptr_t base, size_t frames) {
+  bool irq = spin_lock_irqsave(&pmm_lock);
+  enum pmm_result result = pmm_free_locked(base, frames);
+  spin_unlock_irqrestore(&pmm_lock, irq);
+  return result;
 }

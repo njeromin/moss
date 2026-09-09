@@ -3,9 +3,9 @@
 #include <arch/memory/layout.h>
 #include <arch/memory/paging_info.h>
 #include <common/memory.h>
-#include <core/memory/pmm.h>
 #include <core/memory/direct_map.h>
 #include <core/memory/map.h>
+#include <core/memory/pmm.h>
 
 static struct vmm_space kernel_space;
 
@@ -66,16 +66,9 @@ enum vmm_status vmm_unmap(struct vmm_space* space, uintptr_t virt,
     return VMM_ERROR;
   }
 
-  for (size_t offset = 0; offset < size; offset += PAGE_SIZE) {
-    int res = arch_paging_unmap(space->root_phys, virt + offset);
-
-    // Strict behavior: fail if any page in the range wasn't mapped
-    if (res != PAGING_OK) {
-      return VMM_ERROR;
-    }
-  }
-
-  return VMM_OK;
+  return arch_paging_unmap_range(space->root_phys, virt, size) == PAGING_OK
+             ? VMM_OK
+             : VMM_ERROR;
 }
 
 enum vmm_status vmm_unmap_page(struct vmm_space* space, virt_addr_t virt,

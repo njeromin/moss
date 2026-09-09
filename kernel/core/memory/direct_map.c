@@ -22,16 +22,21 @@ enum vmm_status direct_map_init(struct vmm_space* space,
       }
     }
   }
+
   for (size_t i = 0; i < map->available_count; ++i) {
     struct memory_region ram = map->available[i];
     uintptr_t end = align_down(ram.offset + ram.size, PAGE_SIZE);
+
     if (ram.size == 0 || ram.offset >= end) {
       continue;
     }
+
     uintptr_t start = align_up(ram.offset, PAGE_SIZE);
+
     while (start < end) {
       uintptr_t stop = end;
       uintptr_t skip = start;
+
       // Subtract NO_MAP from both lists, including unsorted/overlapping ranges.
       // Exclude whole pages touched by a reservation; only map whole RAM pages.
       for (size_t list = 0; list < 2; ++list) {
@@ -61,10 +66,12 @@ enum vmm_status direct_map_init(struct vmm_space* space,
           }
         }
       }
+
       if (skip > start) {
         start = skip;
         continue;
       }
+
       // Earlier RAM entries have already mapped their eligible pages. Skip
       // their full-page coverage so overlapping discovery entries aren't mapped twice.
       for (size_t j = 0; j < i; ++j) {
@@ -85,16 +92,20 @@ enum vmm_status direct_map_init(struct vmm_space* space,
           stop = lo;
         }
       }
+
       if (skip > start) {
         start = skip;
         continue;
       }
+
       if (vmm_map(space, arch_phys_to_virt(start), start, stop - start,
                   PAGE_READ | PAGE_WRITE) != VMM_OK) {
         return VMM_ERROR;
       }
+
       start = stop;
     }
   }
+
   return VMM_OK;
 }

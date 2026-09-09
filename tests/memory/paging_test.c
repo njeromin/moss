@@ -1,10 +1,10 @@
-// Optional in-kernel tests: configure with -DOS_PAGING_TESTS=ON and boot QEMU.
+// Run in the separate paging_tests.elf image with the run_paging_tests target.
 #include <arch/memory/layout.h>
 #include <arch/memory/paging.h>
 #include <arch/memory/paging_info.h>
 #include <core/console.h>
-#include <core/memory/vmm.h>
 #include <core/memory/pmm.h>
+#include <core/memory/vmm.h>
 #include <core/panic.h>
 
 #define CHECK(condition)                                                       \
@@ -97,7 +97,7 @@ void paging_test(void) {
   CHECK(pmm_alloc(1, &frame) == PMM_OK);
   uintptr_t alias = 32 * GIB + (frame & (GIB - 1));
   CHECK(arch_paging_map_range(root, 32 * GIB, frame & ~(GIB - 1), GIB,
-                             PAGE_READ | PAGE_WRITE) == PAGING_OK);
+                              PAGE_READ | PAGE_WRITE) == PAGING_OK);
   volatile uint64_t* direct = (volatile uint64_t*)arch_phys_to_virt(frame);
   *direct = 0x12345678;
   arch_paging_switch_space(root, 0);
@@ -111,4 +111,6 @@ void paging_test(void) {
   arch_paging_destroy_space(root);
   console_log("paging_test",
               "Large-page mapping and partial unmap tests passed.\n");
+  extern void paging_smp_test(void);
+  paging_smp_test();
 }

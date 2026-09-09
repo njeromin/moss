@@ -1,17 +1,21 @@
+#include <arch/memory/paging.h>
+
+#include "./paging_hw.h"
 #include <arch/cpu.h>
 #include <arch/memory/layout.h>
-#include <arch/memory/paging.h>
 #include <arch/memory/paging_info.h>
 #include <common/memory.h>
 #include <core/memory/pmm.h>
+#include <core/sync/spinlock.h>
+
+// Shared kernel tables require one lock across all roots. Lock order is
+// paging_lock -> PMM lock. Queries hold this lock too, protecting table lifetime.
+static struct spinlock paging_lock;
 
 #define SV39_ROOT_ENTRIES 512
 #define SV39_USER_ENTRIES 256
 #define SV39_KERNEL_ENTRIES 256
 
-#define SATP_MODE_SV39 (8ULL << 60)
-#define SATP_ASID_SHIFT 44
-#define SATP_ASID_MASK 0xFFFFULL
 #define PTE_PPN_SHIFT 10
 
 // Hardware PTE flags (Sv39)
@@ -77,7 +81,7 @@ static int walk_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
 
 // Preserve translation, permissions and conservative A/D history while
 // replacing a large leaf with 512 smaller leaves. Callers serialize software
-// page-table changes; CAS also preserves concurrent hardware A/D updates.
+// page-table changes with paging_lock; CAS also preserves hardware A/D updates.
 static int split_leaf(uint64_t* pte, int level) {
   uintptr_t child;
   if (pmm_alloc(1, &child) != PMM_OK) {
@@ -126,7 +130,7 @@ static uint64_t* walk_leaf(phys_addr_t root, virt_addr_t virt) {
 // Master kernel root saved during boot
 static phys_addr_t master_kernel_root = 0;
 
-int arch_paging_create_space(phys_addr_t* out_root) {
+static int create_space_locked(phys_addr_t* out_root) {
   if (out_root == NULL) {
     return PAGING_ERR_INVALID_ARG;
   }
@@ -156,7 +160,16 @@ int arch_paging_create_space(phys_addr_t* out_root) {
     // rather than replacing a root entry in only one address space.
     for (size_t i = SV39_USER_ENTRIES; i < SV39_ROOT_ENTRIES; ++i) {
       uint64_t pte = kernel_table[i];
-      if ((pte & PTE_VALID) && (pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE))) {
+      if (!(pte & PTE_VALID)) {
+        uintptr_t child;
+        if (pmm_alloc(1, &child) != PMM_OK) {
+          pmm_free(phys, 1);
+          return PAGING_ERR_NOMEM;
+        }
+        memory_set((void*)arch_phys_to_virt(child), 0, PAGE_SIZE);
+        __atomic_store_n(&kernel_table[i], phys_to_ppn(child) | PTE_VALID,
+                         __ATOMIC_RELEASE);
+      } else if (pte & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) {
         int result = split_leaf(&kernel_table[i], 2);
         if (result != PAGING_OK) {
           pmm_free(phys, 1);
@@ -173,7 +186,7 @@ int arch_paging_create_space(phys_addr_t* out_root) {
   return PAGING_OK;
 }
 
-void arch_paging_destroy_space(phys_addr_t root) {
+static void destroy_space_locked(phys_addr_t root) {
   if (root == 0 || root == master_kernel_root) {
     return;
   }
@@ -210,23 +223,12 @@ void arch_paging_destroy_space(phys_addr_t root) {
   arch_paging_flush_all();
 }
 
-void arch_paging_switch_space(phys_addr_t root, size_t space_id) {
-  uint64_t satp_val =
-      SATP_MODE_SV39 |
-      (((uint64_t)space_id & SATP_ASID_MASK) << SATP_ASID_SHIFT) |
-      (root >> PAGE_SHIFT);
-
-  __asm__ volatile(
-      "sfence.vma\n\t"     // Ensure all prior page-table stores are committed
-      "csrw satp, %0\n\t"  // Switch translation mode, ASID, and root PPN
-      "sfence.vma\n\t"
-      :
-      : "r"(satp_val)
-      : "memory");
+static void switch_space_locked(phys_addr_t root, size_t space_id) {
+  riscv64_paging_activate(root, space_id);
 }
 
 static int map_leaf(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
-                     size_t remaining, unsigned permissions, size_t* mapped) {
+                    size_t remaining, unsigned permissions, size_t* mapped) {
   if ((virt & PAGE_MASK) != 0 || (phys & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
@@ -282,17 +284,20 @@ static int map_leaf(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
   return PAGING_OK;
 }
 
-int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
-                    unsigned permissions) {
-  if (root == 0) return PAGING_ERR_INVALID_ARG;
+static int map_locked(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                      unsigned permissions) {
+  if (root == 0) {
+    return PAGING_ERR_INVALID_ARG;
+  }
   size_t mapped;
   int result = map_leaf(root, virt, phys, PAGE_SIZE, permissions, &mapped);
   arch_paging_flush_all();
   return result;
 }
 
-int arch_paging_map_range(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
-                          size_t size, unsigned permissions) {
+static int map_range_locked(phys_addr_t root, virt_addr_t virt,
+                            phys_addr_t phys, size_t size,
+                            unsigned permissions) {
   if (root == 0 || size == 0 || (virt & PAGE_MASK) || (phys & PAGE_MASK) ||
       (size & PAGE_MASK) || size > UINTPTR_MAX - virt ||
       size > UINTPTR_MAX - phys) {
@@ -324,10 +329,12 @@ static inline int is_table_empty(const uint64_t* table) {
   return 1;
 }
 
-int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
-                          struct page_status* out_status,
-                          phys_addr_t* out_phys) {
-  if (root == 0) return PAGING_ERR_INVALID_ARG;
+static int unmap_ext_locked(phys_addr_t root, virt_addr_t virt,
+                            struct page_status* out_status,
+                            phys_addr_t* out_phys) {
+  if (root == 0) {
+    return PAGING_ERR_INVALID_ARG;
+  }
   if ((virt & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
@@ -340,7 +347,9 @@ int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
   }
   if (pte2 & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) {
     int result = split_leaf(&table2[idx2], 2);
-    if (result != PAGING_OK) return result;
+    if (result != PAGING_OK) {
+      return result;
+    }
     pte2 = __atomic_load_n(&table2[idx2], __ATOMIC_ACQUIRE);
   }
 
@@ -353,7 +362,9 @@ int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
   }
   if (pte1 & (PTE_READ | PTE_WRITE | PTE_EXECUTE)) {
     int result = split_leaf(&table1[idx1], 1);
-    if (result != PAGING_OK) return result;
+    if (result != PAGING_OK) {
+      return result;
+    }
     pte1 = __atomic_load_n(&table1[idx1], __ATOMIC_ACQUIRE);
   }
 
@@ -389,8 +400,7 @@ int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
 
     // Kernel root entries may have been copied to other spaces. Keep their
     // shared Level 1 tables alive, including when operating on the master.
-    int is_shared_kernel_slot =
-        (idx2 >= SV39_USER_ENTRIES);
+    int is_shared_kernel_slot = (idx2 >= SV39_USER_ENTRIES);
     bool prune_l1 = false;
     if (!is_shared_kernel_slot && is_table_empty(table1)) {
       __atomic_exchange_n(&table2[idx2], 0, __ATOMIC_SEQ_CST);
@@ -419,13 +429,13 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
   return arch_paging_unmap_ext(root, virt, NULL, NULL);
 }
 
-int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
-                      unsigned* out_permissions) {
+static int query_locked(phys_addr_t root, virt_addr_t virt,
+                        phys_addr_t* out_phys, unsigned* out_permissions) {
   uint64_t* table = (uint64_t*)arch_phys_to_virt(root);
 
   for (int level = 2; level >= 0; level--) {
     size_t idx = vpn(virt, level);
-    uint64_t pte = table[idx];
+    uint64_t pte = __atomic_load_n(&table[idx], __ATOMIC_ACQUIRE);
 
     if (!(pte & PTE_VALID)) {
       return PAGING_ERR_NOT_MAPPED;
@@ -462,8 +472,8 @@ int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
   return PAGING_ERR_NOT_MAPPED;
 }
 
-int arch_paging_get_status(phys_addr_t root, virt_addr_t virt,
-                           struct page_status* out_status) {
+static int get_status_locked(phys_addr_t root, virt_addr_t virt,
+                             struct page_status* out_status) {
   if ((virt & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
@@ -486,8 +496,8 @@ int arch_paging_get_status(phys_addr_t root, virt_addr_t virt,
   return PAGING_OK;
 }
 
-int arch_paging_clear_status(phys_addr_t root, virt_addr_t virt,
-                             unsigned status_flags) {
+static int clear_status_locked(phys_addr_t root, virt_addr_t virt,
+                               unsigned status_flags) {
   if ((virt & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
@@ -515,8 +525,8 @@ int arch_paging_clear_status(phys_addr_t root, virt_addr_t virt,
   return PAGING_OK;
 }
 
-int arch_paging_set_status(phys_addr_t root, virt_addr_t virt,
-                           unsigned status_flags) {
+static int set_status_locked(phys_addr_t root, virt_addr_t virt,
+                             unsigned status_flags) {
   if ((virt & PAGE_MASK) != 0) {
     return PAGING_ERR_INVALID_ALIGNMENT;
   }
@@ -544,10 +554,99 @@ int arch_paging_set_status(phys_addr_t root, virt_addr_t virt,
   return PAGING_OK;
 }
 
-void arch_paging_flush_page(virt_addr_t virt) {
-  asm volatile("sfence.vma %0, zero" : : "r"(virt) : "memory");
+static int unmap_range_locked(phys_addr_t root, virt_addr_t virt, size_t size) {
+  if (!root || !size || (virt & PAGE_MASK) || (size & PAGE_MASK) ||
+      size > UINTPTR_MAX - virt) {
+    return PAGING_ERR_INVALID_ARG;
+  }
+  for (size_t offset = 0; offset < size; offset += PAGE_SIZE) {
+    int result = unmap_ext_locked(root, virt + offset, NULL, NULL);
+    if (result != PAGING_OK) {
+      return result;
+    }
+  }
+  return PAGING_OK;
 }
 
-void arch_paging_flush_all(void) {
-  asm volatile("sfence.vma zero, zero" ::: "memory");
+int arch_paging_create_space(phys_addr_t* out_root) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = create_space_locked(out_root);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+void arch_paging_destroy_space(phys_addr_t root) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  destroy_space_locked(root);
+  spin_unlock_irqrestore(&paging_lock, irq);
+}
+
+int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                    unsigned permissions) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = map_locked(root, virt, phys, permissions);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+int arch_paging_map_range(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
+                          size_t size, unsigned permissions) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = map_range_locked(root, virt, phys, size, permissions);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+int arch_paging_unmap_ext(phys_addr_t root, virt_addr_t virt,
+                          struct page_status* out_status,
+                          phys_addr_t* out_phys) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = unmap_ext_locked(root, virt, out_status, out_phys);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+int arch_paging_query(phys_addr_t root, virt_addr_t virt, phys_addr_t* out_phys,
+                      unsigned* out_permissions) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = query_locked(root, virt, out_phys, out_permissions);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+int arch_paging_get_status(phys_addr_t root, virt_addr_t virt,
+                           struct page_status* out_status) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = get_status_locked(root, virt, out_status);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+int arch_paging_clear_status(phys_addr_t root, virt_addr_t virt,
+                             unsigned status_flags) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = clear_status_locked(root, virt, status_flags);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+int arch_paging_set_status(phys_addr_t root, virt_addr_t virt,
+                           unsigned status_flags) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = set_status_locked(root, virt, status_flags);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+int arch_paging_unmap_range(phys_addr_t root, virt_addr_t virt, size_t size) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  int result = unmap_range_locked(root, virt, size);
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return result;
+}
+
+void arch_paging_switch_space(phys_addr_t root, size_t space_id) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  switch_space_locked(root, space_id);
+  spin_unlock_irqrestore(&paging_lock, irq);
 }

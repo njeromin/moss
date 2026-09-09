@@ -132,12 +132,44 @@ Each populated build exports `compile_commands.json`. `.clangd` defaults to
 kernel ELF exists, use `gdb -ex 'file build/<preset>/kernel.elf'` to override the
 default executable loaded by `.gdbinit`.
 
-Optional RISC-V paging integration tests run inside QEMU after VMM initialization:
+RISC-V paging integration tests use a separate `paging_tests.elf` with its own
+entry point under `tests/memory/`. Build and run them in QEMU with:
 
 ```sh
-cmake --preset riscv64-debug -DOS_PAGING_TESTS=ON
-cmake --build --preset riscv64-debug --target run
+cmake --preset riscv64-debug
+cmake --build --preset riscv64-debug --target run_paging_tests
 ```
 
 They check large-leaf selection, mixed page sizes, translation and permissions,
-overlap rejection, and partial unmapping. Set `OS_PAGING_TESTS=OFF` to disable.
+overlap rejection, and partial unmapping. The test runner uses two harts and
+requires the concurrent-hart test to pass. It shuts QEMU down on success and
+times out on a hang. The production `kernel.elf` contains no test entry points.
+
+Memory operations use interrupt-safe spinlocks: one global paging lock covers
+all roots and shared kernel tables, and a separate PMM lock protects bitmap
+allocation/free. The lock order is paging then PMM. Queries hold the paging lock
+while walking tables; VMM range operations hold it across the whole range.
+Boot discovery, early allocation, and PMM initialization still run before other
+harts use memory management. Creating the first additional address space reserves
+shared lower-level tables for all kernel root slots (up to 1 MiB), including empty
+slots, so later kernel mappings are visible in every space.
+
+RISC-V mapping changes issue local fences and synchronous all-hart/all-ASID
+[OpenSBI RFENCE](https://github.com/riscv-software-src/opensbi/blob/master/lib/sbi/sbi_tlb.c)
+shootdowns before returning unmapped table frames to the PMM. RFENCE support is
+required; a failed shootdown panics instead of allowing frame reuse. The global
+lock and full flushes favor correctness over parallel throughput.
+
+Callers must retain ownership of roots and data frames: a translation query does
+not pin a frame, and destroying a space requires every hart to have switched away
+and all users of that root to have stopped. Mapping/unmapping does not allocate
+or free the mapped data frames. A range operation can still return a partial
+failure; locking prevents competing operations during it, not rollback.
+
+`tests/memory/concurrent_paging_test.c` contains the command for a host stress test
+using the real PMM and paging code with CPU/TLB stubs. It runs eight writer threads
+and a reader. The separate QEMU test image also starts one stopped hart
+when available, exercise concurrent mapping, and check that replacing a mapping
+invalidates a translation cached on that hart. Run QEMU with `-smp 2` or more to
+exercise this test manually; `run_paging_tests` supplies two harts.
+The secondary-hart entry is test-only, not a production SMP boot implementation.

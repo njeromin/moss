@@ -16,7 +16,8 @@ list(APPEND KERNEL_SOURCES
     arch/riscv64/sbi/mpxy.c
     arch/riscv64/sbi/fwft.c
     arch/riscv64/panic.c
-    arch/riscv64/memory/paging.c
+    arch/riscv64/memory/paging/paging.c
+    arch/riscv64/memory/paging/paging_hw.c
     arch/riscv64/memory/layout/layout.c
     arch/riscv64/memory/layout/memory_map.c
     arch/riscv64/timer.c

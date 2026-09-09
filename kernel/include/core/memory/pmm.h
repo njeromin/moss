@@ -36,7 +36,10 @@ struct pmm_ctx {
   size_t region_capacity;
 };
 
+// Boot-only initialization, completed before other harts allocate memory.
 enum pmm_result pmm_init(void);
 
+// Allocation/free are serialized and preserve the caller's interrupt state.
+// Callers must remove mappings and finish shootdowns before freeing data frames.
 enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr);
 enum pmm_result pmm_free(uintptr_t base, size_t frames);
