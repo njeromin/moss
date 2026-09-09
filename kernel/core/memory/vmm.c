@@ -7,9 +7,9 @@
 
 static struct vmm_space kernel_space;
 
-int vmm_init(void) {
+enum vmm_status vmm_init(void) {
   if (arch_paging_create_space(&kernel_space.root_phys) != 0) {
-    return -1;
+    return VMM_ERROR;
   }
 
   uintptr_t phys_start = kernel_physical_start;
@@ -25,17 +25,17 @@ int vmm_init(void) {
 
   arch_paging_switch_space(kernel_space.root_phys, 0);
 
-  return 0;
+  return VMM_OK;
 }
 
 struct vmm_space* vmm_get_kernel_space(void) {
   return &kernel_space;
 }
 
-int vmm_map(struct vmm_space* space, uintptr_t virt, uintptr_t phys,
-            size_t size, uint8_t flags) {
+enum vmm_status vmm_map(struct vmm_space* space, uintptr_t virt, uintptr_t phys,
+                        size_t size, uint8_t flags) {
   if (space == NULL || (virt & PAGE_MASK) != 0 || (phys & PAGE_MASK) != 0) {
-    return -1;
+    return VMM_ERROR;
   }
 
   for (size_t offset = 0; offset < size; offset += PAGE_SIZE) {
@@ -46,22 +46,23 @@ int vmm_map(struct vmm_space* space, uintptr_t virt, uintptr_t phys,
     }
   }
 
-  return 0;
+  return VMM_OK;
 }
 
-int vmm_unmap(struct vmm_space* space, uintptr_t virt, size_t size) {
+enum vmm_status vmm_unmap(struct vmm_space* space, uintptr_t virt,
+                          size_t size) {
   if (space == NULL || size == 0) {
-    return -1;
+    return VMM_ERROR;
   }
 
   // Both virt and size must be page-aligned
   if ((virt & PAGE_MASK) != 0 || (size & PAGE_MASK) != 0) {
-    return -1;
+    return VMM_ERROR;
   }
 
   // Overflow check (virt + size wrapping around 64-bit integer)
   if (virt + size < virt) {
-    return -1;
+    return VMM_ERROR;
   }
 
   for (size_t offset = 0; offset < size; offset += PAGE_SIZE) {
@@ -77,13 +78,13 @@ int vmm_unmap(struct vmm_space* space, uintptr_t virt, size_t size) {
     }
   }
 
-  return 0;
+  return VMM_OK;
 }
 
-int vmm_translate(const struct vmm_space* space, uintptr_t virt,
-                  uintptr_t* phys) {
+enum vmm_status vmm_translate(const struct vmm_space* space, uintptr_t virt,
+                              uintptr_t* phys) {
   if (space == NULL || phys == NULL || space->root_phys == 0) {
-    return -1;
+    return VMM_ERROR;
   }
 
   // Query the hardware page table; we pass NULL for permissions since we only want phys
@@ -92,5 +93,5 @@ int vmm_translate(const struct vmm_space* space, uintptr_t virt,
     return res;
   }
 
-  return 0;
+  return VMM_OK;
 }

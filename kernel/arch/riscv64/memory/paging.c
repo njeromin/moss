@@ -289,16 +289,16 @@ int arch_paging_unmap(phys_addr_t root, virt_addr_t virt) {
     return PAGING_ERR_NOT_MAPPED;
   }
 
-  // 1. Clear the leaf 4 KiB entry and invalidate the TLB for this virtual address
+  // Clear the leaf 4 KiB entry and invalidate the TLB for this virtual address
   table0[idx0] = 0;
   arch_paging_flush_page(virt);
 
-  // 2. Prune Level 0 table if it has no remaining entries
+  // Prune Level 0 table if it has no remaining entries
   if (is_table_empty(table0)) {
     table1[idx1] = 0;
     pmm_free(table0_phys, 1);
 
-    // 3. Prune Level 1 table if empty (never prune shared kernel entries in user spaces)
+    // Prune Level 1 table if empty (never prune shared kernel entries in user spaces)
     int is_shared_kernel_slot =
         (root != master_kernel_root) && (idx2 >= SV39_USER_ENTRIES);
     if (!is_shared_kernel_slot && is_table_empty(table1)) {

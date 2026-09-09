@@ -37,7 +37,7 @@ void init_virtual_memory(const struct device_discovery_info device_discovery) {
   console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT,
               "Initialised physical memory manager.\n");
 
-  if (vmm_init() != 0) {
+  if (vmm_init() != VMM_OK) {
     kpanic("Failed to initialise virtual memory manager.");
   }
 

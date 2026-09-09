@@ -1,7 +1,7 @@
+#include "sbi.h"
 #include <arch/cpu.h>
 #include <arch/trap.h>
 #include <core/console.h>
-#include "sbi.h"
 
 #define _CONSOLE_LOG_SUBJECT "cpu"
 
@@ -14,6 +14,7 @@ void arch_cpu_init(size_t hart_id) {
 
   struct sbi_ret probe = sbi_probe_extension(SBI_EXT_FWFT);
   if (probe.error == SBI_SUCCESS && probe.value != 0) {
+    // Hardware PTE A/D Updating (Svadu)
     struct sbi_ret ret = sbi_fwft_set(SBI_FWFT_PTE_AD_HW_UPDATING, 1, 0);
     if (ret.error == SBI_SUCCESS) {
       struct sbi_ret get_val = sbi_fwft_get(SBI_FWFT_PTE_AD_HW_UPDATING);
@@ -21,13 +22,32 @@ void arch_cpu_init(size_t hart_id) {
         svadu_enabled = true;
         console_log(_CONSOLE_LOG_SUBJECT,
                     "Enabled Svadu (hardware PTE A/D updating).\n");
-        return;
       }
     }
-  }
+    if (!svadu_enabled) {
+      console_log(_CONSOLE_LOG_SUBJECT,
+                  "Svadu not available (software A/D updating).\n");
+    }
 
-  console_log(_CONSOLE_LOG_SUBJECT,
-              "Svadu not available (software A/D updating).\n");
+    // Misaligned Exception Delegation
+    ret = sbi_fwft_set(SBI_FWFT_MISALIGNED_EXC_DELEG, 1, 0);
+    if (ret.error == SBI_SUCCESS) {
+      console_log(_CONSOLE_LOG_SUBJECT,
+                  "Delegated misaligned access exceptions to S-mode.\n");
+    }
+
+    // Double Trap Handling
+    ret = sbi_fwft_set(SBI_FWFT_DOUBLE_TRAP, 1, 0);
+    if (ret.error == SBI_SUCCESS) {
+      console_log(_CONSOLE_LOG_SUBJECT, "Enabled double trap prevention.\n");
+    } else {
+      console_log(_CONSOLE_LOG_SUBJECT,
+                  "Double trap prevention not supported (error=%d).\n",
+                  (int)ret.error);
+    }
+  } else {
+    console_log(_CONSOLE_LOG_SUBJECT, "SBI FWFT extension not available.\n");
+  }
 }
 
 bool arch_has_svadu(void) {

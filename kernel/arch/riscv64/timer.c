@@ -1,5 +1,6 @@
 #include <arch/timer.h>
 
+#include "sbi.h"
 #include <arch/memory/layout.h>
 #include <arch/trap.h>
 #include <common/endian.h>
@@ -7,7 +8,6 @@
 #include <core/console.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "sbi.h"
 
 #define _CONSOLE_LOG_SUBJECT "timer"
 #define SIE_STIE (1ULL << 5)
@@ -40,7 +40,8 @@ static uint64_t dtb_find_timebase_frequency(const void* dtb) {
       size_t size = 0;
 
       // First check directly under /cpus
-      if (fdt_get_property(dtb, &child, "timebase-frequency", &data, &size) == 0) {
+      if (fdt_get_property(dtb, &child, "timebase-frequency", &data, &size) ==
+          0) {
         if (size == sizeof(uint32_t)) {
           return be32toh((const uint8_t*)data);
         } else if (size == sizeof(uint64_t)) {
@@ -52,7 +53,8 @@ static uint64_t dtb_find_timebase_frequency(const void* dtb) {
       struct fdt_node cpu_child;
       if (fdt_first_child(dtb, &child, &cpu_child) == 0) {
         do {
-          if (fdt_get_property(dtb, &cpu_child, "timebase-frequency", &data, &size) == 0) {
+          if (fdt_get_property(dtb, &cpu_child, "timebase-frequency", &data,
+                               &size) == 0) {
             if (size == sizeof(uint32_t)) {
               return be32toh((const uint8_t*)data);
             } else if (size == sizeof(uint64_t)) {
@@ -90,8 +92,9 @@ static bool dtb_check_sstc(const void* dtb) {
           const void* data = NULL;
           size_t size = 0;
 
-          // 1. Check riscv,isa-extensions (null-separated string list)
-          if (fdt_get_property(dtb, &cpu_child, "riscv,isa-extensions", &data, &size) == 0) {
+          // Check riscv,isa-extensions (null-separated string list)
+          if (fdt_get_property(dtb, &cpu_child, "riscv,isa-extensions", &data,
+                               &size) == 0) {
             const char* s = (const char*)data;
             size_t offset = 0;
             while (offset < size) {
@@ -107,15 +110,18 @@ static bool dtb_check_sstc(const void* dtb) {
             }
           }
 
-          // 2. Check riscv,isa string
-          if (fdt_get_property(dtb, &cpu_child, "riscv,isa", &data, &size) == 0) {
+          // Check riscv,isa string
+          if (fdt_get_property(dtb, &cpu_child, "riscv,isa", &data, &size) ==
+              0) {
             const char* s = (const char*)data;
             if (size >= 4) {
               for (size_t i = 0; i <= size - 4; i++) {
-                if (s[i] == 's' && s[i + 1] == 's' && s[i + 2] == 't' && s[i + 3] == 'c') {
+                if (s[i] == 's' && s[i + 1] == 's' && s[i + 2] == 't' &&
+                    s[i + 3] == 'c') {
                   char prev = (i > 0) ? s[i - 1] : '_';
                   char next = (i + 4 < size) ? s[i + 4] : '\0';
-                  if ((prev == '_' || prev == ',') && (next == '_' || next == '\0' || next == ',')) {
+                  if ((prev == '_' || prev == ',') &&
+                      (next == '_' || next == '\0' || next == ',')) {
                     return true;
                   }
                 }
@@ -155,8 +161,7 @@ int arch_timer_init(const struct device_discovery_info* discovery) {
   arch_timer_cancel();
 
   console_log(_CONSOLE_LOG_SUBJECT,
-              "Timer initialised: freq=%zu Hz, Sstc=%s.\n",
-              (size_t)s_frequency,
+              "Timer initialised: freq=%zu Hz, Sstc=%s.\n", (size_t)s_frequency,
               s_has_sstc ? "enabled (stimecmp)" : "disabled (using OpenSBI)");
 
   s_initialised = true;
