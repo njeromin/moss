@@ -4,7 +4,7 @@
 #include <arch/cpu.h>
 #include <arch/hw_features.h>
 #include <arch/memory/layout.h>
-#include <arch/memory/paging_info.h>
+#include <arch/platform/paging_info.h>
 #include <common/memory.h>
 #include <core/memory/pmm.h>
 #include <core/sync/spinlock.h>

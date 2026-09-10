@@ -1,7 +1,7 @@
 #include <core/memory/vmm.h>
 
 #include <arch/memory/layout.h>
-#include <arch/memory/paging_info.h>
+#include <arch/platform/paging_info.h>
 #include <common/memory.h>
 #include <core/memory/direct_map.h>
 #include <core/memory/memory_map.h>

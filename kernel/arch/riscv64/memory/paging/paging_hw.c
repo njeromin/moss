@@ -1,6 +1,6 @@
 #include "./paging_hw.h"
 #include "sbi.h"
-#include <arch/memory/paging_info.h>
+#include <arch/platform/paging_info.h>
 #include <core/panic.h>
 
 void riscv64_paging_activate(phys_addr_t root, size_t space_id) {

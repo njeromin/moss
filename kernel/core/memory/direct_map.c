@@ -1,6 +1,6 @@
 #include <core/memory/direct_map.h>
 
-#include <arch/memory/paging_info.h>
+#include <arch/platform/paging_info.h>
 #include <common/memory.h>
 
 enum vmm_status direct_map_init(struct vmm_space* space,
