@@ -3,6 +3,7 @@
 
 #include "common/memory.h"
 #include "core/memory/allocation/boot_alloc.h"
+#include "core/memory/memory_map.h"
 #include "core/memory/regions.h"
 #include <arch/memory/layout.h>
 
@@ -56,11 +57,11 @@ static int emit_pmm_region(uintptr_t addr_start, uintptr_t addr_end) {
     set_frame_state(bitmap, frame, PMM_FRAME_RESERVED);
   }
 
-  pmm.regions[pmm.region_count++] = (struct pmm_region){
-      .base = addr_start,
-      .frame_count = frame_count,
-      .bitmap = bitmap,
-      .cursor = 0};
+  pmm.regions[pmm.region_count++] =
+      (struct pmm_region){.base = addr_start,
+                          .frame_count = frame_count,
+                          .bitmap = bitmap,
+                          .cursor = 0};
   return 0;
 }
 
@@ -96,7 +97,7 @@ static int pmm_region_reserve(struct pmm_region* region, uintptr_t start,
 }
 
 enum pmm_result pmm_init(void) {
-  const struct memory_map* memory_map = boot_alloc_memory_map();
+  const struct memory_map* memory_map = memory_map_get();
   pmm.regions = NULL;
   pmm.region_count = 0;
   pmm.region_capacity = 0;
@@ -181,10 +182,10 @@ enum pmm_result pmm_init(void) {
 }
 
 static enum pmm_result find_free_run_in_range(const struct pmm_region* region,
-                                             size_t requested_frames,
-                                             size_t start_frame,
-                                             size_t end_frame,
-                                             size_t* first_frame) {
+                                              size_t requested_frames,
+                                              size_t start_frame,
+                                              size_t end_frame,
+                                              size_t* first_frame) {
   if (region == NULL || requested_frames == 0 || start_frame >= end_frame ||
       end_frame > region->frame_count) {
     return PMM_ERROR_INVALID_INPUT;

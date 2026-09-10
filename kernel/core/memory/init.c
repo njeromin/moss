@@ -2,12 +2,12 @@
 
 #include <core/console.h>
 #include <core/memory/allocation/boot_alloc.h>
-#include <core/memory/map.h>
+#include <core/memory/memory_map.h>
 #include <core/memory/pmm.h>
 #include <core/memory/vmm.h>
 #include <core/panic.h>
 
-#define _CONSOLE_LOG_SUBJECT_MEM_INIT "kmain:memory_init"
+#define _CONSOLE_LOG_SUBJECT_MEM_INIT "memory_init"
 
 void init_virtual_memory(const struct device_discovery_info device_discovery) {
   console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT,
@@ -41,4 +41,3 @@ void init_virtual_memory(const struct device_discovery_info device_discovery) {
   console_log(_CONSOLE_LOG_SUBJECT_MEM_INIT,
               "Initialised virtual memory manager.\n");
 }
-

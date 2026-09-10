@@ -4,7 +4,7 @@
 #include <arch/memory/paging_info.h>
 #include <common/memory.h>
 #include <core/memory/direct_map.h>
-#include <core/memory/map.h>
+#include <core/memory/memory_map.h>
 #include <core/memory/pmm.h>
 
 static struct vmm_space kernel_space;
@@ -63,9 +63,9 @@ enum vmm_status vmm_init(void) {
   uintptr_t bss_vend = align_up((uintptr_t)kernel_end, PAGE_SIZE);
   size_t bss_size = bss_vend - bss_vstart;
   if (bss_size > 0) {
-    int err = vmm_map(&kernel_space, bss_vstart,
-                      arch_kernel_virt_to_phys(bss_vstart), bss_size,
-                      PAGE_READ | PAGE_WRITE);
+    int err =
+        vmm_map(&kernel_space, bss_vstart, arch_kernel_virt_to_phys(bss_vstart),
+                bss_size, PAGE_READ | PAGE_WRITE);
     if (err != VMM_OK) {
       return err;
     }

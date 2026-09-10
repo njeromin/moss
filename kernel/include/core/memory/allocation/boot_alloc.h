@@ -11,7 +11,5 @@ void boot_alloc_init(void);
 // Returns NULL on exhaustion, invalid arguments, or after the PMM handoff.
 void* boot_alloc(size_t size, size_t alignment);
 
-// Includes all allocations made since initialisation.
-const struct memory_map* boot_alloc_memory_map(void);
 // Disable early allocations before the PMM consumes the final reservations.
 void boot_alloc_finish(void);

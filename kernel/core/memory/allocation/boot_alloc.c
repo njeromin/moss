@@ -1,7 +1,7 @@
 #include <core/memory/allocation/boot_alloc.h>
 
 #include <common/memory.h>
-#include <core/memory/map.h>
+#include <core/memory/memory_map.h>
 #include <core/panic.h>
 
 static int allocations_enabled = 0;
@@ -25,10 +25,6 @@ void boot_alloc_init(void) {
   }
 
   allocations_enabled = 1;
-}
-
-const struct memory_map* boot_alloc_memory_map(void) {
-  return memory_map_get();
 }
 
 void boot_alloc_finish(void) {

@@ -1,4 +1,4 @@
-#include <core/memory/map.h>
+#include <core/memory/memory_map.h>
 
 #include <arch/memory/layout.h>
 #include <common/memory.h>
@@ -101,8 +101,7 @@ static int map_grow_reserved(struct memory_map* map,
 
   size_t old_cap = map->reserved_capacity;
   size_t new_cap = (old_cap < 4) ? 4 : old_cap * 2;
-  size_t alloc_size =
-      align_up(new_cap * sizeof(struct memory_region), 4096);
+  size_t alloc_size = align_up(new_cap * sizeof(struct memory_region), 4096);
 
   uintptr_t phys = map_find_free_ram(map, alloc_size, 4096, pending);
   if (phys == 0) {
