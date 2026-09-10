@@ -1,7 +1,7 @@
 // Run in the separate paging_tests.elf image with the run_paging_tests target.
 #include <arch/memory/layout.h>
 #include <arch/memory/paging.h>
-#include <arch/memory/paging_info.h>
+#include <asm/paging_info.h>
 #include <core/console.h>
 #include <core/memory/pmm.h>
 #include <core/memory/vmm.h>

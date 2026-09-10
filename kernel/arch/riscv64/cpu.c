@@ -1,5 +1,5 @@
 #include <arch/cpu.h>
-#include <arch/hw_features.h>  // Needed as this implements arch_has_svadu()
+#include <asm/hw_features.h>  // Needed as this implements arch_has_svadu()
 
 #include "sbi.h"
 #include <arch/trap.h>

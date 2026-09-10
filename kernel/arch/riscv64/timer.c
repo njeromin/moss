@@ -1,7 +1,7 @@
 #include <arch/timer.h>
 
 #include "sbi.h"
-#include <arch/cpu_relax.h>
+#include <arch/cpu.h>
 #include <arch/memory/layout.h>
 #include <arch/trap.h>
 #include <common/endian.h>
@@ -254,7 +254,6 @@ void arch_delay_ticks(uint64_t ticks) {
   uint64_t start = arch_timer_get_ticks();
   while ((arch_timer_get_ticks() - start) < ticks) {
     arch_cpu_relax();
-    __asm__ volatile("nop");
   }
 }
 

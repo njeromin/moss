@@ -111,9 +111,9 @@ assembler with C preprocessing enabled. x86-64 uses Intel syntax via
 `-masm=intel`; RISC-V and AArch64 use their native syntax. Assembler directives
 and macros use GAS syntax, not NASM syntax.
 
-Shared kernel headers belong in `kernel/include/kernel/`; architecture headers
-belong in `kernel/arch/<arch>/include/arch/`. Private headers stay beside their
-sources. The build also exposes `build/<preset>/generated/include/` for future
+Shared architecture interface headers belong in `kernel/include/arch/`; architecture
+implementation headers belong in `kernel/arch/<arch>/include/asm/`. Private headers
+stay beside their sources. The build also exposes `build/<preset>/generated/include/` for future
 generated headers; generators must declare outputs and target dependencies.
 
 Headers included by both C and assembly should expose plain numeric macros and

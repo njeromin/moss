@@ -75,6 +75,10 @@ const struct memory_map* boot_alloc_memory_map(void) {
   return &map;
 }
 
+const struct memory_map* memory_map_get(void) {
+  return &map;
+}
+
 void boot_alloc_finish(void) {}
 
 void* boot_alloc(size_t size, size_t alignment) {

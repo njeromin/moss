@@ -1,5 +1,6 @@
 #pragma once
 
+#include <asm/cpu.h>
 #include <stdbool.h>
 #include <stddef.h>
 

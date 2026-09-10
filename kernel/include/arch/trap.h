@@ -1,6 +1,6 @@
 #pragma once
 
-#include <arch/platform/trap_layout.h>
+#include <asm/trap_layout.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
