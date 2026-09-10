@@ -16,7 +16,6 @@ uintptr_t arch_kernel_phys_to_virt(uintptr_t phys);
 uintptr_t arch_phys_to_virt(uintptr_t phys);
 uintptr_t arch_virt_to_phys(uintptr_t virt);
 
-
 // Physical bounds emitted by the selected architecture's linker script.
 extern const uintptr_t kernel_physical_start;
 extern const uintptr_t kernel_physical_end;

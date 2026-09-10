@@ -52,10 +52,6 @@ void arch_cpu_init(size_t hart_id) {
   }
 }
 
-void arch_cpu_relax(void) {
-  __asm__ volatile(".insn i 0x0F, 0, x0, x0, 0x010" ::: "memory");
-}
-
 bool arch_has_svadu(void) {
   return svadu_enabled;
 }

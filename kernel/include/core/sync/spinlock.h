@@ -1,6 +1,7 @@
 #pragma once
 
 #include <arch/cpu.h>
+#include <arch/cpu_relax.h>
 #include <stdbool.h>
 
 // Zero-initialised, non-recursive lock. Interrupt masking prevents a local
