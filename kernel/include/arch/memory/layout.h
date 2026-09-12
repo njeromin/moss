@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/kmain.h>
-#include <core/memory/regions.h>
+#include <memory/regions.h>
 #include <stdint.h>
 
 // Translate an address in the fixed higher-half kernel mapping. The selected

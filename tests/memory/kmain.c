@@ -3,7 +3,7 @@
 #include "sbi.h"
 #include <arch/timer.h>
 #include <core/console.h>
-#include <core/memory/init.h>
+#include <memory/init.h>
 #include <core/panic.h>
 
 void paging_test(void);

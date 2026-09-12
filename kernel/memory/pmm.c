@@ -1,13 +1,12 @@
-#include <core/memory/pmm.h>
+#include <memory/pmm.h>
 #include <stdint.h>
 
-#include "common/memory.h"
-#include "core/memory/allocation/boot_alloc.h"
-#include "core/memory/memory_map.h"
-#include "core/memory/regions.h"
 #include <arch/memory/layout.h>
-
-#include <core/sync/spinlock.h>
+#include <common/memory.h>
+#include <memory/allocation/boot_alloc.h>
+#include <memory/memory_map.h>
+#include <memory/regions.h>
+#include <sync/spinlock.h>
 
 static struct pmm_ctx pmm;
 static struct spinlock pmm_lock;

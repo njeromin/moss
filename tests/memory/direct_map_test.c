@@ -1,11 +1,11 @@
 /* Run from the repository root:
  cc -std=c11 -Wall -Wextra -Werror -Ikernel/include -Icommon/include \
  -Ikernel/arch/riscv64/include tests/memory/direct_map_test.c \
- kernel/core/memory/direct_map.c common/memory.c -o /tmp/direct_map_test \
+ kernel/memory/direct_map.c common/memory.c -o /tmp/direct_map_test \
  && /tmp/direct_map_test
  */
 #include <assert.h>
-#include <core/memory/direct_map.h>
+#include <memory/direct_map.h>
 #include <stdio.h>
 
 static struct {

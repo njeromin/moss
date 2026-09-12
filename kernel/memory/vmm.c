@@ -1,11 +1,11 @@
-#include <core/memory/vmm.h>
+#include <memory/vmm.h>
 
 #include <arch/memory/layout.h>
 #include <asm/paging_info.h>
 #include <common/memory.h>
-#include <core/memory/direct_map.h>
-#include <core/memory/memory_map.h>
-#include <core/memory/pmm.h>
+#include <memory/direct_map.h>
+#include <memory/memory_map.h>
+#include <memory/pmm.h>
 
 static struct vmm_space kernel_space;
 

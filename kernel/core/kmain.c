@@ -3,7 +3,7 @@
 #include <arch/panic.h>
 #include <arch/timer.h>
 #include <core/console.h>
-#include <core/memory/init.h>
+#include <memory/init.h>
 
 #define _CONSOLE_LOG_SUBJECT "kmain"
 

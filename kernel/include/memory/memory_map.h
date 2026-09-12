@@ -2,7 +2,7 @@
 
 #include <arch/memory/layout.h>
 #include <core/kmain.h>
-#include <core/memory/regions.h>
+#include <memory/regions.h>
 #include <stddef.h>
 #include <stdint.h>
 

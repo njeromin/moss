@@ -1,10 +1,10 @@
 /* Run: cc -std=c11 -Wall -Wextra -Ikernel/include -Icommon/include
-   tests/memory/boot_alloc_test.c kernel/core/memory/allocation/boot_alloc.c
-   kernel/core/memory/pmm.c common/memory.c -o /tmp/boot_alloc_test
+   tests/memory/boot_alloc_test.c kernel/memory/allocation/boot_alloc.c
+   kernel/memory/pmm.c common/memory.c -o /tmp/boot_alloc_test
    Then run /tmp/boot_alloc_test. */
 #include <assert.h>
-#include <core/memory/allocation/boot_alloc.h>
-#include <core/memory/pmm.h>
+#include <memory/allocation/boot_alloc.h>
+#include <memory/pmm.h>
 #include <stdlib.h>
 
 void kpanic(const char* format, ...) {

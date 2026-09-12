@@ -1,15 +1,15 @@
 /* Host stress test using the real PMM and page-table code, with CPU/TLB stubs:
  cc -std=gnu11 -O2 -Wall -Wextra -Werror -pthread -Ikernel/include \
  -Icommon/include -Ikernel/arch/riscv64/include \
- tests/memory/concurrent_paging_test.c kernel/core/memory/pmm.c \
- kernel/arch/riscv64/memory/paging.c common/memory.c \
+ tests/memory/concurrent_paging_test.c kernel/memory/pmm.c \
+ kernel/arch/riscv64/memory/paging/paging.c common/memory.c \
  -o /tmp/concurrent_paging_test && /tmp/concurrent_paging_test
  */
 #include <arch/cpu.h>
 #include <arch/memory/paging.h>
 #include <assert.h>
-#include <core/memory/allocation/boot_alloc.h>
-#include <core/memory/pmm.h>
+#include <memory/allocation/boot_alloc.h>
+#include <memory/pmm.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdarg.h>

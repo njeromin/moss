@@ -6,8 +6,8 @@
 #include <arch/memory/layout.h>
 #include <asm/paging_info.h>
 #include <common/memory.h>
-#include <core/memory/pmm.h>
-#include <core/sync/spinlock.h>
+#include <memory/pmm.h>
+#include <sync/spinlock.h>
 
 // Shared kernel tables require one lock across all roots. Lock order is
 // paging_lock -> PMM lock. Queries hold this lock too, protecting table lifetime.

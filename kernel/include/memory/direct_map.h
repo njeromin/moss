@@ -1,7 +1,7 @@
 #pragma once
 
 #include <arch/memory/layout.h>
-#include <core/memory/vmm.h>
+#include <memory/vmm.h>
 
 // Map complete discovered RAM pages, excluding all pages touched by NO_MAP.
 // Ordinary reservations remain mapped. Call once on the new kernel space before

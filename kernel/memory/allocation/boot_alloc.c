@@ -1,8 +1,8 @@
-#include <core/memory/allocation/boot_alloc.h>
+#include <memory/allocation/boot_alloc.h>
 
 #include <common/memory.h>
-#include <core/memory/memory_map.h>
 #include <core/panic.h>
+#include <memory/memory_map.h>
 
 static int allocations_enabled = 0;
 

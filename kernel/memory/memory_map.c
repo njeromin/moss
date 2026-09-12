@@ -1,4 +1,4 @@
-#include <core/memory/memory_map.h>
+#include <memory/memory_map.h>
 
 #include <arch/memory/layout.h>
 #include <common/memory.h>

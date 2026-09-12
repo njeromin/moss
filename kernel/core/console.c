@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "arch/tempconsole.h"
+#include <arch/tempconsole.h>
 
 #define CONSOLE_BUFFER_SIZE 128
 

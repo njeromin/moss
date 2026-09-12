@@ -3,8 +3,8 @@
 #include <arch/memory/paging.h>
 #include <asm/paging_info.h>
 #include <core/console.h>
-#include <core/memory/pmm.h>
-#include <core/memory/vmm.h>
+#include <memory/pmm.h>
+#include <memory/vmm.h>
 #include <core/panic.h>
 
 #define CHECK(condition)                                                       \

@@ -1,4 +1,4 @@
-#include <core/memory/direct_map.h>
+#include <memory/direct_map.h>
 
 #include <common/memory.h>
 #include <asm/paging_info.h>

@@ -4,7 +4,9 @@
 
 - Use British English, do not use American English.
 - All if, for, and while blocks should use curly braces, no matter how many lines are inside.
-- Archicture headers in kernel/include/arch should be architecture agnostic in the sense that they do not contain any riscv,x86 etc specific code.
+- Architecture headers in kernel/include/arch should be architecture agnostic in the sense that they do not contain any riscv,x86 etc specific code.
+- Kernel subsystems belong directly under `kernel/<subsystem>/` (e.g. `kernel/memory/`, `kernel/sync/`) with public headers in `kernel/include/<subsystem>/`. Do not nest subsystems inside `kernel/core/`; `core/` is reserved strictly for kernel bootstrap, lifecycle, and core diagnostics/panic handling (`kmain`, `console`, `panic`).
+- Use angle brackets `<...>` for interface, subsystem, architecture, common, and freestanding headers (e.g. `<memory/...>`, `<sync/...>`, `<core/...>`, `<arch/...>`, `<asm/...>`, `<common/...>`, `<stdint.h>`). Use double quotes `"..."` strictly for private implementation headers that stay beside their source files (e.g. `"paging_hw.h"`, `"ecall.h"`).
 
 ## RISC-V higher-half bootstrap
 
@@ -120,6 +122,26 @@ Headers included by both C and assembly should expose plain numeric macros and
 guard C declarations with `#ifndef __ASSEMBLER__`. C expressions such as
 `offsetof` cannot be evaluated by the assembler: use checked numeric offsets
 or generate them with the target compiler. See `tests/build/offsets.h`.
+
+## Subsystems and header structure
+
+Generic kernel subsystems live directly under `kernel/<subsystem>/` (such as
+`kernel/memory/` and `kernel/sync/`), with their public headers in `kernel/include/<subsystem>/`.
+The `kernel/core/` and `kernel/include/core/` directories are reserved exclusively for
+kernel lifecycle, entry, and core diagnostics/panic handling (`kmain`, `console`, `panic`).
+Do not place general subsystems inside `core/`.
+
+Header inclusion conventions:
+- Use `<...>` (angle brackets) for all interface, subsystem, architecture, common, and
+  freestanding headers resolved through configured include search paths (such as
+  `<memory/...>`, `<sync/...>`, `<core/...>`, `<arch/...>`, `<asm/...>`, `<common/...>`,
+  and `<stdint.h>`).
+- Use `"..."` (quotes) strictly for private implementation headers that stay beside
+  their source files in the same directory (such as `"paging_hw.h"` or `"ecall.h"`).
+- Clang-format (`.clang-format`) is configured with `IncludeCategories` and
+  `MainIncludeChar: Any` to format and sort headers according to this hierarchy, placing
+  standard and architecture headers first, followed by common and subsystem headers, and
+  keeping local quoted headers separated.
 
 ## Checking the toolchain
 

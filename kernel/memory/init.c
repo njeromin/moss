@@ -1,11 +1,11 @@
-#include <core/memory/init.h>
+#include <memory/init.h>
 
 #include <core/console.h>
-#include <core/memory/allocation/boot_alloc.h>
-#include <core/memory/memory_map.h>
-#include <core/memory/pmm.h>
-#include <core/memory/vmm.h>
 #include <core/panic.h>
+#include <memory/allocation/boot_alloc.h>
+#include <memory/memory_map.h>
+#include <memory/pmm.h>
+#include <memory/vmm.h>
 
 #define _CONSOLE_LOG_SUBJECT_MEM_INIT "memory_init"
 

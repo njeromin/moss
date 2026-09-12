@@ -4,7 +4,7 @@
 #include <arch/memory/paging.h>
 #include <arch/trap.h>
 #include <core/console.h>
-#include <core/memory/pmm.h>
+#include <memory/pmm.h>
 #include <core/panic.h>
 
 #define CHECK(c)                                                               \
