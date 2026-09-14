@@ -17,6 +17,12 @@ enum task_state {
   TASK_STATE_DEAD,
 };
 
+struct cpu_set {
+  size_t ref_count;
+  size_t num_cpus;   // Number of CPUs represented
+  uint64_t masks[];  // Flexible array of 64-bit bitmasks
+};
+
 struct task {
   struct trap_frame trap_frame;
 
@@ -27,6 +33,7 @@ struct task {
   uint8_t priority;
   uint32_t time_slice_remaining;
   size_t assigned_cpu;
+  struct cpu_set* cpu_affinity;
 
   struct task* next;
   struct task* prev;

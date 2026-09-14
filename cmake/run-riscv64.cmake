@@ -1,6 +1,6 @@
 # Resolve QEMU at launch time so compile-only builds do not require it.
 find_program(QEMU NAMES qemu-system-riscv64 REQUIRED)
-set(args -machine virt -cpu rv64,ssdbltrp=true,smdbltrp=true -m 8192M -smp 1 -bios default
+set(args -machine virt -cpu rv64,ssdbltrp=true,smdbltrp=true -m 8192M -smp 4 -bios default
     -kernel "${KERNEL_ELF}" -nographic)
 if(MODE STREQUAL "debug")
     list(APPEND args -S -gdb tcp:127.0.0.1:1234)

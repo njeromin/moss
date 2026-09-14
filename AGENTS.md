@@ -26,7 +26,25 @@ Sv39's lower canonical half (below 256 GiB). `entry.c` receives the DTB's
 physical address and mapped buffer bound. Memory management must replace these temporary
 mappings with section-specific permissions and a deliberate physical-memory
 mapping before removing the identity mapping. Device MMIO is not mapped yet.
-Only the OpenSBI boot hart may use this entry; secondary harts need another path.
+Only the OpenSBI boot hart may use this entry. Production secondary harts use
+`secondary_entry.S`, a separate physical trampoline with a temporary executable
+identity mapping. Each secondary has its own 16 KiB PMM-backed stack. The boot
+CPU starts them serially after shared subsystem initialisation and waits up to
+five seconds per CPU for a release/acquire acknowledgement. The trampoline
+mapping is removed after all acknowledgements. Secondaries remain parked with
+supervisor interrupts disabled; scheduler handover is not implemented yet.
+Kernel CPU identity currently lives in `tp`; future user trap entry must restore
+that identity before calling code which queries it. Secondary stacks currently
+use the HHDM without guard pages. CPU feature initialisation preserves the boot
+CPU's paging policy and rejects a secondary that cannot support it. Timer
+discovery is global, while timer reset is local to each CPU; direct Sstc access
+is selected only when every enabled DT CPU advertises it.
+
+Run the production startup checks (1, 4, and 65 CPUs) after building with:
+
+```sh
+cmake -DKERNEL_ELF=build/riscv64-debug/kernel.elf -P tests/smp/run.cmake
+```
 
 At VMM initialization, the replacement root rebuilds the HHDM from discovered
 RAM within the existing 128 GiB physical-address window. It maps only complete
@@ -200,4 +218,4 @@ and a reader. The separate QEMU test image also starts one stopped hart
 when available, exercise concurrent mapping, and check that replacing a mapping
 invalidates a translation cached on that hart. Run QEMU with `-smp 2` or more to
 exercise this test manually; `run_paging_tests` supplies two harts.
-The secondary-hart entry is test-only, not a production SMP boot implementation.
+The paging test's secondary entry remains separate from production SMP startup.

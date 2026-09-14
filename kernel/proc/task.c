@@ -76,6 +76,7 @@ struct task* task_create(struct process* proc, uintptr_t entry_point,
   task->priority = TASK_DEFAULT_PRIORITY;
   task->time_slice_remaining = TASK_DEFAULT_TIME_SLICE;
   task->assigned_cpu = 0;
+  task->cpu_affinity = NULL;
 
   task->next = NULL;
   task->prev = NULL;

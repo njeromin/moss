@@ -1,18 +1,21 @@
 #include <arch/cpu.h>
 #include <asm/hw_features.h>  // Needed as this implements arch_has_svadu()
 
-#include "sbi.h"
 #include <arch/trap.h>
 #include <core/console.h>
+#include <core/panic.h>
+#include "sbi.h"
 
 #define _CONSOLE_LOG_SUBJECT "cpu"
 
 static bool svadu_enabled = false;
+static bool features_initialised;
 
-void arch_cpu_init(size_t hart_id) {
+void arch_cpu_init(cpu_hardware_id_t hart_id) {
   (void)hart_id;
 
   arch_trap_init();
+  bool local_svadu = false;
 
   struct sbi_ret probe = sbi_probe_extension(SBI_EXT_FWFT);
   if (probe.error == SBI_SUCCESS && probe.value != 0) {
@@ -21,12 +24,12 @@ void arch_cpu_init(size_t hart_id) {
     if (ret.error == SBI_SUCCESS) {
       struct sbi_ret get_val = sbi_fwft_get(SBI_FWFT_PTE_AD_HW_UPDATING);
       if (get_val.error == SBI_SUCCESS && get_val.value == 1) {
-        svadu_enabled = true;
+        local_svadu = true;
         console_log(_CONSOLE_LOG_SUBJECT,
                     "Enabled Svadu (hardware PTE A/D updating).\n");
       }
     }
-    if (!svadu_enabled) {
+    if (!local_svadu) {
       console_log(_CONSOLE_LOG_SUBJECT,
                   "Svadu not available (software A/D updating).\n");
     }
@@ -49,6 +52,14 @@ void arch_cpu_init(size_t hart_id) {
     }
   } else {
     console_log(_CONSOLE_LOG_SUBJECT, "SBI FWFT extension not available.\n");
+  }
+  // Boot CPU establishes the paging policy before serial secondary startup.
+  // Never change that policy underneath existing page tables.
+  if (!features_initialised) {
+    svadu_enabled = local_svadu;
+    features_initialised = true;
+  } else if (svadu_enabled && !local_svadu) {
+    kpanic("Secondary CPU cannot support the kernel A/D update policy.\n");
   }
 }
 

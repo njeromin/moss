@@ -1,9 +1,9 @@
 #include <arch/memory/layout.h>
 
+#include <stdbool.h>
 #include <common/endian.h>
 #include <common/fdt.h>
 #include <common/memory.h>
-#include <stdbool.h>
 
 extern const uintptr_t bootstrap_physical_start;
 extern const uintptr_t bootstrap_physical_end;
@@ -97,8 +97,7 @@ static int grow_available(struct memory_map* map,
 
   size_t old_cap = map->available_capacity;
   size_t new_cap = (old_cap < 4) ? 4 : old_cap * 2;
-  size_t alloc_size =
-      align_up(new_cap * sizeof(struct memory_region), 4096);
+  size_t alloc_size = align_up(new_cap * sizeof(struct memory_region), 4096);
 
   uintptr_t phys = find_free_ram(map, alloc_size, 4096, pending);
   if (phys == 0) {
@@ -130,8 +129,7 @@ static int grow_reserved(struct memory_map* map,
 
   size_t old_cap = map->reserved_capacity;
   size_t new_cap = (old_cap < 4) ? 4 : old_cap * 2;
-  size_t alloc_size =
-      align_up(new_cap * sizeof(struct memory_region), 4096);
+  size_t alloc_size = align_up(new_cap * sizeof(struct memory_region), 4096);
 
   uintptr_t phys = find_free_ram(map, alloc_size, 4096, pending);
   if (phys == 0) {
@@ -312,9 +310,9 @@ static int memory_map_dtb(const void* dtb, struct memory_map* memory_map) {
   // Reserve the DTB blob itself.
   const unsigned char* blob = dtb;
   if (add_reserved(memory_map, (struct memory_region){
-          .offset = (uintptr_t)dtb,
-          .size = be32toh(blob + 4),
-          .flags = MEMORY_REGION_RESERVED}) != 0) {
+                                   .offset = (uintptr_t)dtb,
+                                   .size = be32toh(blob + 4),
+                                   .flags = MEMORY_REGION_RESERVED}) != 0) {
     return ARCH_MEMORY_MAP_NO_SPACE;
   }
 
@@ -323,11 +321,18 @@ static int memory_map_dtb(const void* dtb, struct memory_map* memory_map) {
   for (;; entry += 16) {
     uint64_t address = be64toh(entry);
     uint64_t length = be64toh(entry + 8);
-    if (address == 0 && length == 0) break;
-    if (length > UINTPTR_MAX - address) return ARCH_MEMORY_MAP_INVALID;
-    if (length != 0 && add_reserved(memory_map, (struct memory_region){
-            .offset = address, .size = length,
-            .flags = MEMORY_REGION_RESERVED | MEMORY_REGION_FIRMWARE}) != 0) {
+    if (address == 0 && length == 0) {
+      break;
+    }
+    if (length > UINTPTR_MAX - address) {
+      return ARCH_MEMORY_MAP_INVALID;
+    }
+    if (length != 0 &&
+        add_reserved(memory_map, (struct memory_region){
+                                     .offset = address,
+                                     .size = length,
+                                     .flags = MEMORY_REGION_RESERVED |
+                                              MEMORY_REGION_FIRMWARE}) != 0) {
       return ARCH_MEMORY_MAP_NO_SPACE;
     }
   }
@@ -392,7 +397,7 @@ int arch_get_memory_map(
 
   int res = ARCH_MEMORY_MAP_OK;
 
-  res = memory_map_dtb((void*)device_discovery_info.dtb, memory_map);
+  res = memory_map_dtb((void*)device_discovery_info.dtb_phys, memory_map);
   if (res != ARCH_MEMORY_MAP_OK) {
     return ARCH_MEMORY_MAP_INVALID;
   }
@@ -403,9 +408,10 @@ int arch_get_memory_map(
   }
 
   if (add_reserved(memory_map, (struct memory_region){
-          .offset = bootstrap_physical_start,
-          .size = bootstrap_physical_end - bootstrap_physical_start,
-          .flags = MEMORY_REGION_RESERVED}) != 0) {
+                                   .offset = bootstrap_physical_start,
+                                   .size = bootstrap_physical_end -
+                                           bootstrap_physical_start,
+                                   .flags = MEMORY_REGION_RESERVED}) != 0) {
     return ARCH_MEMORY_MAP_NO_SPACE;
   }
 

@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-// Initialise architecture and CPU features for the specified hart (e.g. Svadu).
-void arch_cpu_init(size_t hart_id);
+// Initialise architecture features and trap handling on the executing CPU.
+void arch_cpu_init(cpu_hardware_id_t hardware_id);
 
 // Enable interrupts globally on the current CPU core (sstatus.SIE).
 void arch_interrupts_enable(void);

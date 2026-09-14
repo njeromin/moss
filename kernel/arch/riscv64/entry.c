@@ -11,7 +11,7 @@
 
 #define _CONSOLE_LOG_SUBJECT "arch_entry"
 
-void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr,
+void arch_startup_core_entry(cpu_hardware_id_t hart_id, uintptr_t dtb_ptr,
                              size_t dtb_size) {
   console_log(_CONSOLE_LOG_SUBJECT,
               "Entered C portion of arch specific init.\n");
@@ -26,9 +26,13 @@ void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr,
   console_log(_CONSOLE_LOG_SUBJECT, "Verified DTB.\n");
 
   struct entry_info entry_info = {
+      .boot_cpu_hardware_id = hart_id,
       .device_discovery =
           {
-              .dtb = dtb_ptr,
+              .dtb_phys = dtb_ptr,
+              .dtb_size = dtb_size,
+
+              .acpi_rsdp_phys = 0,
           },
   };
 

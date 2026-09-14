@@ -15,6 +15,9 @@ typedef void (*arch_timer_callback_fn)(struct trap_frame* tf);
  */
 int arch_timer_init(const struct device_discovery_info* discovery);
 
+// Reset the executing CPU's timer after global timer discovery has completed.
+void arch_timer_init_cpu(void);
+
 // Returns true if the timer has been initialised.
 bool arch_timer_is_initialised(void);
 
