@@ -1,7 +1,7 @@
 #include <memory/direct_map.h>
 
-#include <common/memory.h>
 #include <asm/paging_info.h>
+#include <common/memory.h>
 
 enum vmm_status direct_map_init(struct vmm_space* space,
                                 const struct memory_map* map) {
@@ -17,7 +17,7 @@ enum vmm_status direct_map_init(struct vmm_space* space,
     for (size_t i = 0; i < count; ++i) {
       if (regions[i].size > UINTPTR_MAX - regions[i].offset ||
           (!list && regions[i].size &&
-           regions[i].offset + regions[i].size > ARCH_DIRECT_MAP_PHYS_LIMIT)) {
+           regions[i].offset + regions[i].size > DIRECT_MAP_PHYS_LIMIT)) {
         return VMM_ERROR;
       }
     }

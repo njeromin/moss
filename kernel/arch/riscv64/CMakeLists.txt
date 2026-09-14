@@ -4,6 +4,8 @@ list(APPEND KERNEL_SOURCES
     arch/riscv64/cpu.c
     arch/riscv64/trap.S
     arch/riscv64/trap.c
+    arch/riscv64/user.c
+    arch/riscv64/user.S
     arch/riscv64/sbi/ecall.c
     arch/riscv64/sbi/base.c
     arch/riscv64/sbi/timer.c

@@ -202,5 +202,3 @@ higher_half_entry:
   j .Lhalt
   .cfi_endproc
 .size higher_half_entry, . - higher_half_entry
-
-.section .note.GNU-stack, "", @progbits

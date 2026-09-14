@@ -1,12 +1,13 @@
 #include <core/kmain.h>
 
+#include <stddef.h>
+#include <stdint.h>
 #include <arch/cpu.h>
 #include <arch/memory/layout.h>
+#include <arch/timer.h>
 #include <common/fdt.h>
 #include <core/console.h>
 #include <core/panic.h>
-#include <stddef.h>
-#include <stdint.h>
 
 #define _CONSOLE_LOG_SUBJECT "arch_entry"
 
@@ -30,6 +31,8 @@ void arch_startup_core_entry(size_t hart_id, uintptr_t dtb_ptr,
               .dtb = dtb_ptr,
           },
   };
+
+  arch_timer_init(&entry_info.device_discovery);
 
   kmain(entry_info);
 }

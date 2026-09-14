@@ -99,6 +99,6 @@ void arch_paging_flush_page(virt_addr_t virt);
 // Invalidate all TLB entries (used when switching address spaces or tearing down a space)
 void arch_paging_flush_all(void);
 
-// Serialize an entire unmap range against mapping/query operations. Partial
+// Serialise an entire unmap range against mapping/query operations. Partial
 // failure semantics match repeated unmaps; prior changes are not rolled back.
 int arch_paging_unmap_range(phys_addr_t root, virt_addr_t virt, size_t size);

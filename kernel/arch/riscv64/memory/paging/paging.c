@@ -1,17 +1,17 @@
 #include <arch/memory/paging.h>
 
-#include "./paging_hw.h"
 #include <arch/cpu.h>
-#include <asm/hw_features.h>
 #include <arch/memory/layout.h>
+#include <asm/hw_features.h>
 #include <asm/paging_info.h>
 #include <common/memory.h>
 #include <memory/pmm.h>
 #include <sync/spinlock.h>
+#include "./paging_hw.h"
 
 // Shared kernel tables require one lock across all roots. Lock order is
 // paging_lock -> PMM lock. Queries hold this lock too, protecting table lifetime.
-static struct spinlock paging_lock;
+static struct spinlock paging_lock = SPINLOCK_INIT;
 
 #define SV39_ROOT_ENTRIES 512
 #define SV39_USER_ENTRIES 256
@@ -81,7 +81,7 @@ static int walk_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
 }
 
 // Preserve translation, permissions and conservative A/D history while
-// replacing a large leaf with 512 smaller leaves. Callers serialize software
+// replacing a large leaf with 512 smaller leaves. Callers serialise software
 // page-table changes with paging_lock; CAS also preserves hardware A/D updates.
 static int split_leaf(uint64_t* pte, int level) {
   uintptr_t child;

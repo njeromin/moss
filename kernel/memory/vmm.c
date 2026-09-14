@@ -80,6 +80,31 @@ struct vmm_space* vmm_get_kernel_space(void) {
   return &kernel_space;
 }
 
+enum vmm_status vmm_create_space(struct vmm_space* space) {
+  if (space == NULL) {
+    return VMM_ERROR;
+  }
+
+  return (arch_paging_create_space(&space->root_phys) == PAGING_OK) ? VMM_OK
+                                                                    : VMM_ERROR;
+}
+
+enum vmm_status vmm_destroy_space(struct vmm_space* space) {
+  if (space == NULL || space->root_phys == 0) {
+    return VMM_ERROR;
+  }
+
+  arch_paging_destroy_space(space->root_phys);
+  space->root_phys = 0;
+  return VMM_OK;
+}
+
+void vmm_switch_space(const struct vmm_space* space, size_t space_id) {
+  if (space != NULL && space->root_phys != 0) {
+    arch_paging_switch_space(space->root_phys, space_id);
+  }
+}
+
 enum vmm_status vmm_map(struct vmm_space* space, uintptr_t virt, uintptr_t phys,
                         size_t size, uint8_t flags) {
   if (space == NULL || (virt & PAGE_MASK) != 0 || (phys & PAGE_MASK) != 0) {

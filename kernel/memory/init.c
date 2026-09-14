@@ -2,7 +2,7 @@
 
 #include <core/console.h>
 #include <core/panic.h>
-#include <memory/allocation/boot_alloc.h>
+#include <memory/boot_alloc.h>
 #include <memory/memory_map.h>
 #include <memory/pmm.h>
 #include <memory/vmm.h>

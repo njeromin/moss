@@ -5,4 +5,4 @@
 #define PAGE_MASK (PAGE_SIZE - 1)
 
 // Physical-address window reserved for the direct map.
-#define ARCH_DIRECT_MAP_PHYS_LIMIT (128ULL << 30)
+#define DIRECT_MAP_PHYS_LIMIT (128ULL << 30)

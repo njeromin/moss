@@ -17,6 +17,15 @@ enum vmm_status vmm_init(void);
 
 struct vmm_space* vmm_get_kernel_space(void);
 
+// Create a new address space (allocates root page table and copies shared kernel mappings)
+enum vmm_status vmm_create_space(struct vmm_space* space);
+
+// Destroy a user address space and free its non-kernel page tables
+enum vmm_status vmm_destroy_space(struct vmm_space* space);
+
+// Switch the active hardware MMU address space
+void vmm_switch_space(const struct vmm_space* space, size_t space_id);
+
 enum vmm_status vmm_map(struct vmm_space* space, virt_addr_t virt,
                         phys_addr_t phys, size_t size, uint8_t flags);
 

@@ -1,4 +1,4 @@
-#include <memory/allocation/boot_alloc.h>
+#include <memory/boot_alloc.h>
 
 #include <common/memory.h>
 #include <core/panic.h>

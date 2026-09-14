@@ -8,7 +8,7 @@
 #include <arch/cpu.h>
 #include <arch/memory/paging.h>
 #include <assert.h>
-#include <memory/allocation/boot_alloc.h>
+#include <memory/boot_alloc.h>
 #include <memory/pmm.h>
 #include <pthread.h>
 #include <sched.h>

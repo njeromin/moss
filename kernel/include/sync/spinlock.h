@@ -3,11 +3,18 @@
 #include <arch/cpu.h>
 #include <stdbool.h>
 
+#define SPINLOCK_INIT ((struct spinlock){.held = 0})
+
 // Zero-initialised, non-recursive lock. Interrupt masking prevents a local
 // interrupt handler from spinning on a lock held by the interrupted context.
 struct spinlock {
   unsigned held;
 };
+
+// Initialise a spinlock into the unlocked state.
+static inline void spinlock_init(struct spinlock* lock) {
+  __atomic_store_n(&lock->held, 0, __ATOMIC_RELAXED);
+}
 
 static inline bool spin_lock_irqsave(struct spinlock* lock) {
   bool enabled = arch_interrupts_enabled();

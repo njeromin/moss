@@ -1,8 +1,8 @@
 #pragma once
 
-#include <arch/memory/layout.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <arch/memory/layout.h>
 
 // TODO: Ensure this is the same size as the smallest page in the current architecture.
 #define PMM_FRAME_SIZE 4096
@@ -40,7 +40,7 @@ struct pmm_ctx {
 // Boot-only initialization, completed before other harts allocate memory.
 enum pmm_result pmm_init(void);
 
-// Allocation/free are serialized and preserve the caller's interrupt state.
+// Allocation/free are serialised and preserve the caller's interrupt state.
 // Callers must remove mappings and finish shootdowns before freeing data frames.
 enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr);
 enum pmm_result pmm_free(uintptr_t base, size_t frames);

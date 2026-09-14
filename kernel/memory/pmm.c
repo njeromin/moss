@@ -3,13 +3,13 @@
 
 #include <arch/memory/layout.h>
 #include <common/memory.h>
-#include <memory/allocation/boot_alloc.h>
+#include <memory/boot_alloc.h>
 #include <memory/memory_map.h>
 #include <memory/regions.h>
 #include <sync/spinlock.h>
 
 static struct pmm_ctx pmm;
-static struct spinlock pmm_lock;
+static struct spinlock pmm_lock = SPINLOCK_INIT;
 
 static enum pmm_frame_state frame_state(const uint8_t* bitmap, size_t frame) {
   size_t bit = frame * 2;
