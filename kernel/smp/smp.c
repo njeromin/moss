@@ -25,7 +25,6 @@ struct cpu {
   uint32_t capacity_dmips_mhz;
   // Firmware-reported frequency, not a live or necessarily maximum frequency.
   uint64_t clock_frequency_hz;
-  uintptr_t kernel_stack_top;
   // Set by the target after local setup. Parked CPUs are not schedulable yet.
   bool started;
 };
@@ -34,7 +33,7 @@ static struct cpu* cpus;
 static struct cpu* boot_cpu;
 static size_t cpu_count;
 static bool startup_requested;
-static bool scheduler_released;
+static bool jump_addr_released;
 static uintptr_t secondary_release_address;
 
 static bool cpu_node_enabled(const void* dtb, const struct fdt_node* node) {
@@ -177,7 +176,6 @@ void smp_init(const struct device_discovery_info* discovery,
   console_log("smp", "Discovered %zu CPUs.\n", cpu_count);
   console_log("smp", "Boot CPU has logical ID %zu.\n", boot_cpu->id);
   arch_cpu_set_logical_id(boot_cpu->id);
-  boot_cpu->kernel_stack_top = (uintptr_t)stack_top;
   boot_cpu->started = true;
 }
 
@@ -187,7 +185,7 @@ static _Noreturn void secondary_entry(size_t id) {
   }
   // Publish only after architecture setup and entry onto this CPU's stack.
   __atomic_store_n(&cpus[id].started, true, __ATOMIC_RELEASE);
-  while (!__atomic_load_n(&scheduler_released, __ATOMIC_ACQUIRE)) {
+  while (!__atomic_load_n(&jump_addr_released, __ATOMIC_ACQUIRE)) {
     arch_cpu_relax();
   }
   void (*entry_fn)(void) = (void (*)(void))secondary_release_address;
@@ -209,44 +207,44 @@ void smp_start_secondary_cpus(void) {
     if (cpu == boot_cpu) {
       continue;
     }
+
     uintptr_t stack_phys;
     const size_t stack_frames = 4;
     if (pmm_alloc(stack_frames, &stack_phys) != PMM_OK) {
       kpanic("Failed to allocate secondary CPU stack.\n");
     }
-    cpu->kernel_stack_top =
+    uintptr_t stack_top =
         arch_phys_to_virt(stack_phys) + stack_frames * PMM_FRAME_SIZE;
+
     struct cpu_start_info info = {
         .logical_id = cpu->id,
-        .stack_top = cpu->kernel_stack_top,
+        .stack_top = stack_top,
         .entry = secondary_entry,
     };
+
     if (arch_smp_start_cpu(cpu->hardware_id, &info) != 0) {
       kpanic("Failed to start CPU %zu.\n", cpu->id);
     }
     uint64_t start = arch_timer_get_ticks();
     uint64_t timeout = arch_timer_nanos_to_ticks(5000000000ULL);
+
     while (!__atomic_load_n(&cpu->started, __ATOMIC_ACQUIRE)) {
       if (arch_timer_get_ticks() - start >= timeout) {
         kpanic("Timed out starting CPU %zu.\n", cpu->id);
       }
+
       arch_cpu_relax();
     }
+
     console_log("smp", "CPU %zu started and parked.\n", cpu->id);
   }
+
   arch_smp_finish_startup();
   console_log("smp", "All %zu CPUs acknowledged startup.\n", cpu_count);
 }
 
 size_t smp_cpu_count(void) {
   return cpu_count;
-}
-
-uintptr_t smp_cpu_stack_top(size_t cpu_id) {
-  if (cpu_id >= cpu_count || cpus[cpu_id].kernel_stack_top == 0) {
-    kpanic("Invalid CPU stack request.\n");
-  }
-  return cpus[cpu_id].kernel_stack_top;
 }
 
 void smp_request_reschedule(size_t cpu_id) {
@@ -269,5 +267,5 @@ void smp_release_secondary_cpus(uintptr_t entry_address) {
     }
   }
   secondary_release_address = entry_address;
-  __atomic_store_n(&scheduler_released, true, __ATOMIC_RELEASE);
+  __atomic_store_n(&jump_addr_released, true, __ATOMIC_RELEASE);
 }

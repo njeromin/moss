@@ -58,7 +58,7 @@ static void cpu_start_sched(void) {
       continue;
     }
 
-    uintptr_t kstack_top = smp_cpu_stack_top(cpu_id);
+    uintptr_t kstack_top = task->kernel_stack_base + task->kernel_stack_size;
     struct trap_frame* tf =
         (struct trap_frame*)(kstack_top - sizeof(struct trap_frame));
 
@@ -102,7 +102,7 @@ void sched_schedule(struct task* task) {
   bool found_allowed_cpu = false;
 
   for (size_t cpu_id = 0; cpu_id < cpu_count; ++cpu_id) {
-    // 1. Check affinity
+    // Check affinity
     if (!cpu_set_contains(task->cpu_affinity, cpu_id)) {
       continue;
     }

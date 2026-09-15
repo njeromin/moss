@@ -14,6 +14,5 @@ void smp_init(const struct device_discovery_info* discovery,
 void smp_start_secondary_cpus(void);
 
 size_t smp_cpu_count(void);
-uintptr_t smp_cpu_stack_top(size_t cpu_id);
 void smp_request_reschedule(size_t cpu_id);
 void smp_release_secondary_cpus(uintptr_t entry_address);

@@ -55,14 +55,16 @@ void kmain(struct entry_info entry_info) {
     kpanic("Failed to map test code page into user space.\n");
   }
 
-  struct task* task = task_create(proc, user_entry, 0);
-  if (task == NULL) {
-    kpanic("Failed to create test task.\n");
+  struct task* task1 = task_create(proc, user_entry, 0);
+  struct task* task2 = task_create(proc, user_entry, 0);
+  if (task1 == NULL || task2 == NULL) {
+    kpanic("Failed to create test tasks.\n");
   }
 
-  console_log(_CONSOLE_LOG_SUBJECT, "Scheduling test task (tid=%zu).\n",
-              task->tid);
-  sched_schedule(task);
+  console_log(_CONSOLE_LOG_SUBJECT, "Scheduling test tasks (tid=%zu,%zu).\n",
+              task1->tid, task2->tid);
+  sched_schedule(task1);
+  sched_schedule(task2);
 
   sched_start();
 

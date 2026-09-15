@@ -36,6 +36,9 @@ struct task {
   // User stack address and size for cleanup.
   virt_addr_t user_stack_base;
   size_t user_stack_size;
+
+  virt_addr_t kernel_stack_base;
+  size_t kernel_stack_size;
 };
 
 int tasks_init(void);
