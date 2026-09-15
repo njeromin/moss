@@ -2,6 +2,7 @@
 #include <arch/trap.h>
 #include <core/console.h>
 #include <core/panic.h>
+#include <sched/sched.h>
 
 #define _CONSOLE_LOG_SUBJECT "trap"
 
@@ -86,12 +87,21 @@ static void dump_trap_frame(const struct trap_frame* tf,
   console_write("=====================================================\n");
 }
 
+#define SSTATUS_SPP (1ULL << 8)
+
+bool arch_trap_is_usermode(const struct trap_frame* tf) {
+  return tf != NULL && (tf->sstatus & SSTATUS_SPP) == 0;
+}
+
 void arch_trap_init(void) {
   uintptr_t stvec = (uintptr_t)arch_trap_entry;
   // Set stvec to direct mode (lowest 2 bits 0)
   __asm__ volatile("csrw stvec, %0" : : "r"(stvec) : "memory");
   // In S-mode kernel execution, sscratch is 0
   __asm__ volatile("csrw sscratch, zero" ::: "memory");
+
+  // Enable supervisor software interrupts (SSIE) for reschedule IPIs
+  __asm__ volatile("csrs sie, %0" : : "r"(1ULL << 1) : "memory");
 
   console_log(_CONSOLE_LOG_SUBJECT, "Trap vector initialised (stvec=%p).\n",
               (void*)stvec);
@@ -102,8 +112,20 @@ void arch_trap_handler(struct trap_frame* tf) {
   uint64_t code = tf->scause & ~(1ULL << 63);
 
   if (is_interrupt) {
+    if (code == 1) {
+      // Clear supervisor software interrupt pending bit
+      __asm__ volatile("csrc sip, %0" : : "r"(1ULL << 1) : "memory");
+      if (arch_trap_is_usermode(tf)) {
+        sched_preempt(tf);
+      }
+      return;
+    }
+
     if (code == 5) {
       arch_timer_handle_interrupt(tf);
+      if (arch_trap_is_usermode(tf)) {
+        sched_preempt(tf);
+      }
       return;
     }
 
@@ -119,7 +141,10 @@ void arch_trap_handler(struct trap_frame* tf) {
     // Breakpoint exception (ebreak)
     console_log(_CONSOLE_LOG_SUBJECT, "Breakpoint caught at %p (resuming).\n",
                 (void*)tf->sepc);
+    uint64_t sstatus_sum = (1ULL << 18);
+    __asm__ volatile("csrs sstatus, %0" : : "r"(sstatus_sum) : "memory");
     uint16_t instr = *(const uint16_t*)tf->sepc;
+    __asm__ volatile("csrc sstatus, %0" : : "r"(sstatus_sum) : "memory");
     tf->sepc += ((instr & 0x3) == 0x3) ? 4 : 2;
     return;
   }

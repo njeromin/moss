@@ -4,6 +4,7 @@
 #include <asm/trap_layout.h>
 #include <ipc/ipc.h>
 #include <proc/capabilities.h>
+#include <proc/cpu_set.h>
 #include <proc/process.h>
 
 #define TASK_DEFAULT_PRIORITY 10
@@ -17,12 +18,6 @@ enum task_state {
   TASK_STATE_DEAD,
 };
 
-struct cpu_set {
-  size_t ref_count;
-  size_t num_cpus;   // Number of CPUs represented
-  uint64_t masks[];  // Flexible array of 64-bit bitmasks
-};
-
 struct task {
   struct trap_frame trap_frame;
 
@@ -34,9 +29,6 @@ struct task {
   uint32_t time_slice_remaining;
   size_t assigned_cpu;
   struct cpu_set* cpu_affinity;
-
-  struct task* next;
-  struct task* prev;
 
   struct ipc_endpoint* waiting_endpoint;
   struct task* reply_target;

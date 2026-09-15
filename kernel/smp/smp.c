@@ -34,6 +34,8 @@ static struct cpu* cpus;
 static struct cpu* boot_cpu;
 static size_t cpu_count;
 static bool startup_requested;
+static bool scheduler_released;
+static uintptr_t secondary_release_address;
 
 static bool cpu_node_enabled(const void* dtb, const struct fdt_node* node) {
   if (!fdt_property_string_is(dtb, node, "device_type", "cpu")) {
@@ -185,11 +187,14 @@ static _Noreturn void secondary_entry(size_t id) {
   }
   // Publish only after architecture setup and entry onto this CPU's stack.
   __atomic_store_n(&cpus[id].started, true, __ATOMIC_RELEASE);
-  // Scheduler handover belongs here once per-CPU scheduling is implemented.
-  // Interrupts remain disabled; no tasks can be assigned to this CPU yet.
-  while (true) {
+  while (!__atomic_load_n(&scheduler_released, __ATOMIC_ACQUIRE)) {
     arch_cpu_relax();
   }
+  void (*entry_fn)(void) = (void (*)(void))secondary_release_address;
+  if (entry_fn != NULL) {
+    entry_fn();
+  }
+  kpanic("Secondary CPU entry returned.\n");
 }
 
 void smp_start_secondary_cpus(void) {
@@ -231,4 +236,38 @@ void smp_start_secondary_cpus(void) {
   }
   arch_smp_finish_startup();
   console_log("smp", "All %zu CPUs acknowledged startup.\n", cpu_count);
+}
+
+size_t smp_cpu_count(void) {
+  return cpu_count;
+}
+
+uintptr_t smp_cpu_stack_top(size_t cpu_id) {
+  if (cpu_id >= cpu_count || cpus[cpu_id].kernel_stack_top == 0) {
+    kpanic("Invalid CPU stack request.\n");
+  }
+  return cpus[cpu_id].kernel_stack_top;
+}
+
+void smp_request_reschedule(size_t cpu_id) {
+  if (cpu_id >= cpu_count) {
+    kpanic("Invalid reschedule target.\n");
+  }
+  arch_smp_reschedule_cpu(cpus[cpu_id].hardware_id);
+}
+
+void smp_release_secondary_cpus(uintptr_t entry_address) {
+  if (!startup_requested || arch_cpu_logical_id() != boot_cpu->id) {
+    kpanic("Invalid scheduler release.\n");
+  }
+  if (entry_address == 0) {
+    kpanic("Invalid secondary CPU release address.\n");
+  }
+  for (size_t i = 0; i < cpu_count; ++i) {
+    if (!__atomic_load_n(&cpus[i].started, __ATOMIC_ACQUIRE)) {
+      kpanic("CPU has not acknowledged scheduler readiness.\n");
+    }
+  }
+  secondary_release_address = entry_address;
+  __atomic_store_n(&scheduler_released, true, __ATOMIC_RELEASE);
 }

@@ -78,9 +78,6 @@ struct task* task_create(struct process* proc, uintptr_t entry_point,
   task->assigned_cpu = 0;
   task->cpu_affinity = NULL;
 
-  task->next = NULL;
-  task->prev = NULL;
-
   task->waiting_endpoint = NULL;
   task->reply_target = NULL;
 

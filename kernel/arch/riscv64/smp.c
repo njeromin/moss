@@ -102,3 +102,9 @@ size_t arch_cpu_logical_id(void) {
   __asm__ volatile("mv %0, tp" : "=r"(id));
   return id;
 }
+
+void arch_smp_reschedule_cpu(cpu_hardware_id_t hardware_id) {
+  if (sbi_send_ipi(1, hardware_id).error != SBI_SUCCESS) {
+    kpanic("Failed to send scheduler IPI.\n");
+  }
+}

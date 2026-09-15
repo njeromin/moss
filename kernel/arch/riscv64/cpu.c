@@ -82,3 +82,8 @@ bool arch_interrupts_enabled(void) {
   __asm__ volatile("csrr %0, sstatus" : "=r"(sstatus));
   return (sstatus & SSTATUS_SIE) != 0;
 }
+
+void arch_cpu_idle(void) {
+  // Pending enabled interrupts wake WFI even with global SIE clear.
+  __asm__ volatile("wfi\ncsrsi sstatus, 2\nnop\ncsrci sstatus, 2" ::: "memory");
+}

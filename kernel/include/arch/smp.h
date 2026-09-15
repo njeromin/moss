@@ -19,3 +19,6 @@ void arch_smp_finish_startup(void);
 // Kernel-only CPU identity; user trap entry must restore this before using it.
 void arch_cpu_set_logical_id(size_t id);
 size_t arch_cpu_logical_id(void);
+
+// Send a reschedule IPI to the target hardware CPU core.
+void arch_smp_reschedule_cpu(cpu_hardware_id_t hardware_id);

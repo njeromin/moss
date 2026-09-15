@@ -13,3 +13,6 @@ void arch_interrupts_enable(void);
 void arch_interrupts_disable(void);
 // Check if interrupts are globally enabled on the current CPU core (sstatus.SIE).
 bool arch_interrupts_enabled(void);
+
+// Enter low-power idle state until an interrupt occurs.
+void arch_cpu_idle(void);
