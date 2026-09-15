@@ -7,6 +7,7 @@ void kvpanic(const char* format, va_list args) {
   console_write("\n[KERNEL PANIC]\n");
   console_vwrite(format, args);
   console_write("\n");
+  console_flush();
 
   arch_panic_halt();
   __builtin_unreachable();

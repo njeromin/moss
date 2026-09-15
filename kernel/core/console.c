@@ -1,44 +1,49 @@
 #include <core/console.h>
 
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <arch/tempconsole.h>
 
-#define CONSOLE_BUFFER_SIZE 128
+#include <sync/spinlock.h>
 
-struct console_output {
-  char buffer[CONSOLE_BUFFER_SIZE];
-  size_t length;
-};
+#define CONSOLE_BUFFER_SIZE 1024
 
-static void stdout_flush(struct console_output* output) {
-  if (output->length == 0) {
+static struct spinlock console_lock = SPINLOCK_INIT;
+static char console_buffer[CONSOLE_BUFFER_SIZE];
+static size_t console_buffer_len;
+
+static void stdout_flush(void) {
+  if (console_buffer_len == 0) {
     return;
   }
-  output->buffer[output->length] = '\0';
-  arch_tempconsole_write(output->buffer);
-  output->length = 0;
+  console_buffer[console_buffer_len] = '\0';
+  arch_tempconsole_write(console_buffer);
+  console_buffer_len = 0;
 }
 
-static void stdout_putc(struct console_output* output, char character) {
-  if (output->length == CONSOLE_BUFFER_SIZE - 1) {
-    stdout_flush(output);
+static void stdout_putc(char character) {
+  if (console_buffer_len >= CONSOLE_BUFFER_SIZE - 1) {
+    stdout_flush();
   }
-  output->buffer[output->length++] = character;
+  console_buffer[console_buffer_len++] = character;
+  if (character == '\n') {
+    stdout_flush();
+  }
 }
 
-static void stdout_string(struct console_output* output, const char* string) {
-  if (string == 0) {
+static void stdout_string(const char* string) {
+  if (string == NULL) {
     string = "(null)";
   }
   while (*string != '\0') {
-    stdout_putc(output, *string++);
+    stdout_putc(*string++);
   }
 }
 
-static void stdout_unsigned(struct console_output* output, uintmax_t value,
-                            unsigned base) {
+static void stdout_unsigned(uintmax_t value, unsigned base) {
   char digits[sizeof(uintmax_t) * 8];
   size_t length = 0;
   static const char alphabet[] = "0123456789abcdef";
@@ -48,72 +53,93 @@ static void stdout_unsigned(struct console_output* output, uintmax_t value,
     value /= base;
   } while (value != 0);
   while (length != 0) {
-    stdout_putc(output, digits[--length]);
+    stdout_putc(digits[--length]);
   }
 }
 
-static void stdout_signed(struct console_output* output, intmax_t value) {
+static void stdout_signed(intmax_t value) {
   uintmax_t magnitude;
   if (value < 0) {
-    stdout_putc(output, '-');
+    stdout_putc('-');
     magnitude = (uintmax_t)(-(value + 1)) + 1;
   } else {
     magnitude = (uintmax_t)value;
   }
-  stdout_unsigned(output, magnitude, 10);
+  stdout_unsigned(magnitude, 10);
 }
 
-void console_vwrite(const char* format, va_list args) {
-  struct console_output output;
-  output.length = 0;
-
+static void stdout_vformat(const char* format, va_list args) {
   while (*format != '\0') {
     if (*format != '%') {
-      stdout_putc(&output, *format++);
+      stdout_putc(*format++);
       continue;
     }
 
     ++format;
     if (*format == 'z' && (format[1] == 'u' || format[1] == 'x')) {
-      stdout_unsigned(&output, (uintmax_t)va_arg(args, size_t),
+      stdout_unsigned((uintmax_t)va_arg(args, size_t),
                       format[1] == 'x' ? 16 : 10);
       format += 2;
       continue;
     }
     switch (*format) {
       case '%':
-        stdout_putc(&output, '%');
-        break;
+        {
+          stdout_putc('%');
+          break;
+        }
       case 's':
-        stdout_string(&output, va_arg(args, const char*));
-        break;
+        {
+          stdout_string(va_arg(args, const char*));
+          break;
+        }
       case 'd':
-        stdout_signed(&output, (intmax_t)va_arg(args, int));
-        break;
+        {
+          stdout_signed((intmax_t)va_arg(args, int));
+          break;
+        }
       case 'u':
-        stdout_unsigned(&output, (uintmax_t)va_arg(args, unsigned), 10);
-        break;
+        {
+          stdout_unsigned((uintmax_t)va_arg(args, unsigned), 10);
+          break;
+        }
       case 'x':
-        stdout_unsigned(&output, (uintmax_t)va_arg(args, unsigned), 16);
-        break;
+        {
+          stdout_unsigned((uintmax_t)va_arg(args, unsigned), 16);
+          break;
+        }
       case 'p':
-        stdout_string(&output, "0x");
-        stdout_unsigned(&output, (uintmax_t)(uintptr_t)va_arg(args, void *),
-                        16);
-        break;
+        {
+          stdout_string("0x");
+          stdout_unsigned((uintmax_t)(uintptr_t)va_arg(args, void*), 16);
+          break;
+        }
       case '\0':
-        stdout_putc(&output, '%');
-        stdout_flush(&output);
-        return;
+        {
+          stdout_putc('%');
+          return;
+        }
       default:
-        stdout_putc(&output, '%');
-        stdout_putc(&output, *format);
-        break;
+        {
+          stdout_putc('%');
+          stdout_putc(*format);
+          break;
+        }
     }
     ++format;
   }
+}
 
-  stdout_flush(&output);
+void console_flush(void) {
+  bool flags = spin_lock_irqsave(&console_lock);
+  stdout_flush();
+  spin_unlock_irqrestore(&console_lock, flags);
+}
+
+void console_vwrite(const char* format, va_list args) {
+  bool flags = spin_lock_irqsave(&console_lock);
+  stdout_vformat(format, args);
+  spin_unlock_irqrestore(&console_lock, flags);
 }
 
 void console_write(const char* format, ...) {
@@ -126,9 +152,11 @@ void console_write(const char* format, ...) {
 void console_log(const char* subject, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  console_write("[");
-  console_write(subject);
-  console_write("] ");
-  console_vwrite(format, args);
+  bool flags = spin_lock_irqsave(&console_lock);
+  stdout_putc('[');
+  stdout_string(subject);
+  stdout_string("] ");
+  stdout_vformat(format, args);
+  spin_unlock_irqrestore(&console_lock, flags);
   va_end(args);
 }

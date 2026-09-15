@@ -35,8 +35,11 @@ void kmain(struct entry_info entry_info) {
     kpanic("Failed to create test process.\n");
   }
 
-  // 1. ebreak (0x00100073), 2. j . (0x0000006f)
+  // 1. addi a7, zero, 42 (0x02a00893), 2. ecall (0x00000073),
+  // 3. ebreak (0x00100073), 4. j . (0x0000006f)
   static const uint32_t test_user_code[] = {
+      0x02a00893,  // addi a7, zero, 42
+      0x00000073,  // ecall
       0x00100073,  // ebreak
       0x0000006f,  // j . (jal x0, 0)
   };

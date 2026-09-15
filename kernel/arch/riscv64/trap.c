@@ -1,8 +1,9 @@
-#include <arch/timer.h>
 #include <arch/trap.h>
+#include <arch/timer.h>
 #include <core/console.h>
 #include <core/panic.h>
 #include <sched/sched.h>
+#include <syscall/syscall.h>
 
 #define _CONSOLE_LOG_SUBJECT "trap"
 
@@ -137,6 +138,12 @@ void arch_trap_handler(struct trap_frame* tf) {
   }
 
   // Synchronous Exceptions
+  if (code == 8) {
+    syscall_handler(tf);
+    tf->sepc += 4;
+    return;
+  }
+
   if (code == 3) {
     // Breakpoint exception (ebreak)
     console_log(_CONSOLE_LOG_SUBJECT, "Breakpoint caught at %p (resuming).\n",
