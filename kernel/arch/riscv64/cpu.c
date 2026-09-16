@@ -8,63 +8,118 @@
 
 #define _CONSOLE_LOG_SUBJECT "cpu"
 
-static bool svadu_enabled = false;
-static bool features_initialised;
+struct cpu_features {
+  bool probed;
+  bool has_hsm;
+  bool has_fwft;
+  bool svadu_enabled;
+  bool double_trap_enabled;
+  bool landing_pad_enabled;
+};
 
-void arch_cpu_init(cpu_hardware_id_t hart_id) {
-  (void)hart_id;
+static struct cpu_features features;
 
-  arch_trap_init();
-  bool local_svadu = false;
+static void configure_cpu_features(void) {
+  if (!features.has_fwft) {
+    return;
+  }
 
-  struct sbi_ret probe = sbi_probe_extension(SBI_EXT_FWFT);
-  if (probe.error == SBI_SUCCESS && probe.value != 0) {
-    // Hardware PTE A/D Updating (Svadu)
+  // 1. Hardware PTE A/D Updating (Svadu)
+  if (!features.probed) {
     struct sbi_ret ret = sbi_fwft_set(SBI_FWFT_PTE_AD_HW_UPDATING, 1, 0);
     if (ret.error == SBI_SUCCESS) {
       struct sbi_ret get_val = sbi_fwft_get(SBI_FWFT_PTE_AD_HW_UPDATING);
       if (get_val.error == SBI_SUCCESS && get_val.value == 1) {
-        local_svadu = true;
+        features.svadu_enabled = true;
         console_log(_CONSOLE_LOG_SUBJECT,
                     "Enabled Svadu (hardware PTE A/D updating).\n");
       }
     }
-    if (!local_svadu) {
+    if (!features.svadu_enabled) {
       console_log(_CONSOLE_LOG_SUBJECT,
                   "Svadu not available (software A/D updating).\n");
     }
-
-    // Misaligned Exception Delegation
-    ret = sbi_fwft_set(SBI_FWFT_MISALIGNED_EXC_DELEG, 1, 0);
-    if (ret.error == SBI_SUCCESS) {
-      console_log(_CONSOLE_LOG_SUBJECT,
-                  "Delegated misaligned access exceptions to S-mode.\n");
+  } else if (features.svadu_enabled) {
+    struct sbi_ret ret = sbi_fwft_set(SBI_FWFT_PTE_AD_HW_UPDATING, 1, 0);
+    if (ret.error != SBI_SUCCESS) {
+      kpanic("Secondary CPU cannot support the kernel A/D update policy.\n");
     }
+  }
 
-    // Double Trap Handling
+  // Misaligned Exception Delegation
+  struct sbi_ret ret = sbi_fwft_set(SBI_FWFT_MISALIGNED_EXC_DELEG, 1, 0);
+  if (!features.probed && ret.error == SBI_SUCCESS) {
+    console_log(_CONSOLE_LOG_SUBJECT,
+                "Delegated misaligned access exceptions to S-mode.\n");
+  }
+
+  // Double Trap Handling
+  if (!features.probed) {
     ret = sbi_fwft_set(SBI_FWFT_DOUBLE_TRAP, 1, 0);
     if (ret.error == SBI_SUCCESS) {
+      features.double_trap_enabled = true;
       console_log(_CONSOLE_LOG_SUBJECT, "Enabled double trap prevention.\n");
     } else {
       console_log(_CONSOLE_LOG_SUBJECT,
                   "Double trap prevention not supported (error=%d).\n",
                   (int)ret.error);
     }
-  } else {
-    console_log(_CONSOLE_LOG_SUBJECT, "SBI FWFT extension not available.\n");
+  } else if (features.double_trap_enabled) {
+    sbi_fwft_set(SBI_FWFT_DOUBLE_TRAP, 1, 0);
   }
-  // Boot CPU establishes the paging policy before serial secondary startup.
-  // Never change that policy underneath existing page tables.
-  if (!features_initialised) {
-    svadu_enabled = local_svadu;
-    features_initialised = true;
-  } else if (svadu_enabled && !local_svadu) {
-    kpanic("Secondary CPU cannot support the kernel A/D update policy.\n");
+
+  // Landing Pad (Zicfilp)
+  if (!features.probed) {
+    ret = sbi_fwft_set(SBI_FWFT_LANDING_PAD, 1, 0);
+    if (ret.error == SBI_SUCCESS) {
+      features.landing_pad_enabled = true;
+      console_log(_CONSOLE_LOG_SUBJECT, "Enabled Landing Pad (Zicfilp).\n");
+    } else {
+      console_log(_CONSOLE_LOG_SUBJECT,
+                  "Landing Pad not supported (error=%d).\n", (int)ret.error);
+    }
+  } else if (features.landing_pad_enabled) {
+    sbi_fwft_set(SBI_FWFT_LANDING_PAD, 1, 0);
+  }
+
+  if (features.landing_pad_enabled) {
+    __asm__ volatile("csrs senvcfg, %0" ::"r"(1ULL << 2));
+    if (!features.probed) {
+      console_log(_CONSOLE_LOG_SUBJECT,
+                  "Enabled U-mode landing pad enforcement (senvcfg.LPE).\n");
+    }
   }
 }
 
+void arch_cpu_init(cpu_hardware_id_t hart_id) {
+  (void)hart_id;
+
+  // Local trap vectors must be configured on every CPU
+  arch_trap_init();
+
+  if (!features.probed) {
+    struct sbi_ret hsm_probe = sbi_probe_extension(SBI_EXT_HSM);
+    features.has_hsm = (hsm_probe.error == SBI_SUCCESS && hsm_probe.value != 0);
+
+    struct sbi_ret fwft_probe = sbi_probe_extension(SBI_EXT_FWFT);
+    features.has_fwft =
+        (fwft_probe.error == SBI_SUCCESS && fwft_probe.value != 0);
+    if (!features.has_fwft) {
+      console_log(_CONSOLE_LOG_SUBJECT, "SBI FWFT extension not available.\n");
+    }
+  }
+
+  configure_cpu_features();
+
+  features.probed = true;
+}
+
 bool arch_has_svadu(void) {
-  return svadu_enabled;
+  return features.svadu_enabled;
+}
+
+bool arch_has_landing_pad(void) {
+  return features.landing_pad_enabled;
 }
 
 #define SSTATUS_SIE (1ULL << 1)
@@ -84,6 +139,20 @@ bool arch_interrupts_enabled(void) {
 }
 
 void arch_cpu_idle(void) {
+  if (features.has_hsm) {
+    struct sbi_ret ret = sbi_hart_suspend(SBI_HART_SUSPEND_RETENTIVE, 0, 0);
+    if (ret.error == SBI_SUCCESS) {
+      if (!arch_interrupts_enabled()) {
+        __asm__ volatile("csrsi sstatus, 2\nnop\ncsrci sstatus, 2" ::
+                             : "memory");
+      }
+      return;
+    }
+    if (ret.error == SBI_ERR_NOT_SUPPORTED) {
+      features.has_hsm = false;
+    }
+  }
+
   // Pending enabled interrupts wake WFI even with global SIE clear.
   __asm__ volatile("wfi\ncsrsi sstatus, 2\nnop\ncsrci sstatus, 2" ::: "memory");
 }

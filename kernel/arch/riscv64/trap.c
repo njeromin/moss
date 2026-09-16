@@ -1,10 +1,11 @@
 #include <arch/trap.h>
+
 #include <arch/timer.h>
+#include <asm/trap_layout.h>
 #include <core/console.h>
 #include <core/panic.h>
 #include <sched/sched.h>
 #include <syscall/syscall.h>
-#include <asm/trap_layout.h>
 
 #define _CONSOLE_LOG_SUBJECT "trap"
 
@@ -161,6 +162,28 @@ void arch_trap_handler(struct trap_frame* tf) {
     __asm__ volatile("csrc sstatus, %0" : : "r"(sstatus_sum) : "memory");
     tf->sepc += ((instr & 0x3) == 0x3) ? 4 : 2;
     return;
+  }
+
+  if (code == 18) {
+    if (tf->stval == 2) {
+      if (arch_trap_is_usermode(tf)) {
+        console_log(_CONSOLE_LOG_SUBJECT,
+                    "Landing pad violation in user task at %p\n",
+                    (void*)tf->sepc);
+        sched_exit(-1);
+      }
+      dump_trap_frame(tf, "Kernel landing pad violation", false, code);
+      kpanic("Landing pad violation in kernel at %p\n", (void*)tf->sepc);
+    } else if (tf->stval == 3) {
+      if (arch_trap_is_usermode(tf)) {
+        console_log(_CONSOLE_LOG_SUBJECT,
+                    "Shadow stack violation in user task at %p\n",
+                    (void*)tf->sepc);
+        sched_exit(-1);
+      }
+      dump_trap_frame(tf, "Kernel shadow stack violation", false, code);
+      kpanic("Shadow stack violation in kernel at %p\n", (void*)tf->sepc);
+    }
   }
 
   const char* name = exception_name(code);

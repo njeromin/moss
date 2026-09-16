@@ -52,7 +52,7 @@
 typedef uint64_t trap_register_t;
 
 // Complete processor register state saved during an S-mode trap
-struct trap_frame {
+struct __attribute__((aligned(16))) trap_frame {
   // General Purpose Registers (GPRs)
   trap_register_t ra;
   trap_register_t sp;
@@ -91,9 +91,6 @@ struct trap_frame {
   trap_register_t sepc;
   trap_register_t scause;
   trap_register_t stval;
-
-  // Padding to preserve 16-byte stack alignment
-  trap_register_t _pad;
 };
 
 _Static_assert(offsetof(struct trap_frame, ra) == TF_RA,

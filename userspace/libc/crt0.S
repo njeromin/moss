@@ -3,6 +3,9 @@
 .type _start, @function
 
 _start:
+#if defined(__riscv_zicfilp)
+    lpad 0
+#endif
     .option push
     .option norelax
     la gp, __global_pointer$

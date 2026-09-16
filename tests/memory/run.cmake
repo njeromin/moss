@@ -1,6 +1,6 @@
 find_program(QEMU NAMES qemu-system-riscv64 REQUIRED)
 execute_process(
-    COMMAND "${QEMU}" -machine virt -cpu rv64,ssdbltrp=true,smdbltrp=true
+    COMMAND "${QEMU}" -machine virt -cpu rv64,ssdbltrp=true,smdbltrp=true,zicfilp=true
         -m 128M -smp 2 -bios default -kernel "${TEST_ELF}" -nographic
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors
     TIMEOUT 20)
