@@ -24,7 +24,7 @@ struct sched_worker {
 static struct sched_worker* scheds;
 
 static void activate_task(struct sched_worker* sched, struct task* task,
-                          struct trap_frame* tf, size_t cpu_id) {
+                          size_t cpu_id) {
   task->state = TASK_STATE_RUNNING;
   task->assigned_cpu = cpu_id;
   sched->current_task = task;
@@ -37,16 +37,10 @@ static void activate_task(struct sched_worker* sched, struct task* task,
       (uint64_t)task->time_slice_remaining * 1000000ULL);
   arch_timer_set_deadline(arch_timer_get_ticks() + slice_ticks);
   arch_timer_enable_interrupt();
-
-  // Populate trap frame.
-  memory_copy(tf, &task->trap_frame, sizeof(*tf));
 }
 
-static void cpu_start_sched(void) {
+static _Noreturn void dispatch_sched_loop(void) {
   size_t cpu_id = arch_cpu_logical_id();
-
-  console_log(_CONSOLE_LOG_SUBJECT, "Starting worker on cpu %u.\n", cpu_id);
-
   struct sched_worker* sched = &scheds[cpu_id];
 
   for (;;) {
@@ -58,13 +52,17 @@ static void cpu_start_sched(void) {
       continue;
     }
 
-    uintptr_t kstack_top = task->kernel_stack_base + task->kernel_stack_size;
-    struct trap_frame* tf =
-        (struct trap_frame*)(kstack_top - sizeof(struct trap_frame));
-
-    activate_task(sched, task, tf, cpu_id);
-    arch_user_enter(tf);
+    activate_task(sched, task, cpu_id);
+    arch_user_enter(task->trap_frame);
   }
+}
+
+static void cpu_start_sched(void) {
+  size_t cpu_id = arch_cpu_logical_id();
+
+  console_log(_CONSOLE_LOG_SUBJECT, "Starting worker on cpu %u.\n", cpu_id);
+
+  dispatch_sched_loop();
 }
 
 static void init_worker(struct sched_worker* sched) {
@@ -137,11 +135,7 @@ void sched_schedule(struct task* task) {
   }
 }
 
-void sched_preempt(struct trap_frame* tf) {
-  if (tf == NULL) {
-    return;
-  }
-
+void sched_preempt(void) {
   size_t cpu_id = arch_cpu_logical_id();
   struct sched_worker* sched = &scheds[cpu_id];
   struct task* current = sched->current_task;
@@ -149,9 +143,6 @@ void sched_preempt(struct trap_frame* tf) {
   if (current == NULL) {
     return;
   }
-
-  // Save user context from the kernel trap frame.
-  memory_copy(&current->trap_frame, tf, sizeof(*tf));
 
   // Reset time slice and re-enqueue current task.
   current->time_slice_remaining = TASK_DEFAULT_TIME_SLICE;
@@ -165,7 +156,26 @@ void sched_preempt(struct trap_frame* tf) {
     return;
   }
 
-  activate_task(sched, next, tf, cpu_id);
+  if (next == current) {
+    current->state = TASK_STATE_RUNNING;
+    return;
+  }
+
+  activate_task(sched, next, cpu_id);
+  arch_user_enter(next->trap_frame);
+}
+
+void sched_exit(int status) {
+  (void)status;
+  size_t cpu_id = arch_cpu_logical_id();
+  struct sched_worker* sched = &scheds[cpu_id];
+  struct task* current = sched->current_task;
+
+  if (current != NULL) {
+    current->state = TASK_STATE_DEAD;
+  }
+
+  dispatch_sched_loop();
 }
 
 void sched_start(void) {

@@ -47,49 +47,53 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define TRAP_ARG_REGISTER_COUNT 6
+
+typedef uint64_t trap_register_t;
+
 // Complete processor register state saved during an S-mode trap
 struct trap_frame {
   // General Purpose Registers (GPRs)
-  uint64_t ra;
-  uint64_t sp;
-  uint64_t gp;
-  uint64_t tp;
-  uint64_t t0;
-  uint64_t t1;
-  uint64_t t2;
-  uint64_t s0;  // fp
-  uint64_t s1;
-  uint64_t a0;
-  uint64_t a1;
-  uint64_t a2;
-  uint64_t a3;
-  uint64_t a4;
-  uint64_t a5;
-  uint64_t a6;
-  uint64_t a7;
-  uint64_t s2;
-  uint64_t s3;
-  uint64_t s4;
-  uint64_t s5;
-  uint64_t s6;
-  uint64_t s7;
-  uint64_t s8;
-  uint64_t s9;
-  uint64_t s10;
-  uint64_t s11;
-  uint64_t t3;
-  uint64_t t4;
-  uint64_t t5;
-  uint64_t t6;
+  trap_register_t ra;
+  trap_register_t sp;
+  trap_register_t gp;
+  trap_register_t tp;
+  trap_register_t t0;
+  trap_register_t t1;
+  trap_register_t t2;
+  trap_register_t s0;  // fp
+  trap_register_t s1;
+  trap_register_t a0;
+  trap_register_t a1;
+  trap_register_t a2;
+  trap_register_t a3;
+  trap_register_t a4;
+  trap_register_t a5;
+  trap_register_t a6;
+  trap_register_t a7;
+  trap_register_t s2;
+  trap_register_t s3;
+  trap_register_t s4;
+  trap_register_t s5;
+  trap_register_t s6;
+  trap_register_t s7;
+  trap_register_t s8;
+  trap_register_t s9;
+  trap_register_t s10;
+  trap_register_t s11;
+  trap_register_t t3;
+  trap_register_t t4;
+  trap_register_t t5;
+  trap_register_t t6;
 
   // Supervisor Control and Status Registers (CSRs)
-  uint64_t sstatus;
-  uint64_t sepc;
-  uint64_t scause;
-  uint64_t stval;
+  trap_register_t sstatus;
+  trap_register_t sepc;
+  trap_register_t scause;
+  trap_register_t stval;
 
   // Padding to preserve 16-byte stack alignment
-  uint64_t _pad;
+  trap_register_t _pad;
 };
 
 _Static_assert(offsetof(struct trap_frame, ra) == TF_RA,

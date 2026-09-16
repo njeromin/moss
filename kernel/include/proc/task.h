@@ -19,7 +19,7 @@ enum task_state {
 };
 
 struct task {
-  struct trap_frame trap_frame;
+  struct trap_frame* trap_frame;
 
   size_t tid;
   struct process* process;

@@ -92,7 +92,10 @@ struct task* task_create(struct process* proc, uintptr_t entry_point,
     return NULL;
   }
 
-  arch_user_context_init(&task->trap_frame, entry_point, user_stack_top, arg0);
+  uintptr_t kstack_top = task->kernel_stack_base + task->kernel_stack_size;
+  task->trap_frame =
+      (struct trap_frame*)(kstack_top - sizeof(struct trap_frame));
+  arch_user_context_init(task->trap_frame, entry_point, user_stack_top, arg0);
 
   task->state = TASK_STATE_READY;
   task->priority = TASK_DEFAULT_PRIORITY;

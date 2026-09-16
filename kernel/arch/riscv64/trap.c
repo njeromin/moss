@@ -4,6 +4,7 @@
 #include <core/panic.h>
 #include <sched/sched.h>
 #include <syscall/syscall.h>
+#include <asm/trap_layout.h>
 
 #define _CONSOLE_LOG_SUBJECT "trap"
 
@@ -117,7 +118,7 @@ void arch_trap_handler(struct trap_frame* tf) {
       // Clear supervisor software interrupt pending bit
       __asm__ volatile("csrc sip, %0" : : "r"(1ULL << 1) : "memory");
       if (arch_trap_is_usermode(tf)) {
-        sched_preempt(tf);
+        sched_preempt();
       }
       return;
     }
@@ -125,7 +126,7 @@ void arch_trap_handler(struct trap_frame* tf) {
     if (code == 5) {
       arch_timer_handle_interrupt(tf);
       if (arch_trap_is_usermode(tf)) {
-        sched_preempt(tf);
+        sched_preempt();
       }
       return;
     }
@@ -139,8 +140,14 @@ void arch_trap_handler(struct trap_frame* tf) {
 
   // Synchronous Exceptions
   if (code == 8) {
-    syscall_handler(tf);
     tf->sepc += 4;
+
+    uintptr_t args[TRAP_ARG_REGISTER_COUNT] = {
+        tf->a0, tf->a1, tf->a2, tf->a3, tf->a4, tf->a5,
+    };
+
+    syscall_handler(tf->a7, args, &tf->a0, &tf->a1);
+
     return;
   }
 

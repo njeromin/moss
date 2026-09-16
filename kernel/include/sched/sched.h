@@ -8,6 +8,8 @@ void sched_init(void);
 
 void sched_schedule(struct task* task);
 
-void sched_preempt(struct trap_frame* tf);
+void sched_preempt(void);
+
+void sched_exit(int status);
 
 void sched_start(void);
