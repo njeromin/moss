@@ -54,8 +54,11 @@ elseif(OS_ARCH STREQUAL "aarch64")
     target_compile_options(kernel_options INTERFACE -mgeneral-regs-only)
 endif()
 
-add_subdirectory(kernel)
+set(INITRAMFS_ARCHIVE "${PROJECT_BINARY_DIR}/initramfs.cpio" CACHE FILEPATH
+    "Path to generated initramfs CPIO archive")
+
 add_subdirectory(userspace)
+add_subdirectory(kernel)
 
 if(OS_ARCH STREQUAL "riscv64")
     add_subdirectory(tests/memory)

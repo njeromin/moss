@@ -76,8 +76,8 @@ cmake --preset riscv64-debug
 cmake --build --preset riscv64-debug --target run
 ```
 
-The `run` target builds the kernel before launching QEMU with OpenSBI, 128 MiB
-RAM, and one hart. Press **Ctrl-a, then x** to exit QEMU.
+The `run` target builds the kernel and initramfs archive before launching QEMU
+with OpenSBI, attaching the initramfs using `-initrd`. Press **Ctrl-a, then x** to exit QEMU.
 Use `--target debug` instead to pause at startup with GDB on localhost:1234.
 In another terminal, run `gdb` from this repository and break on
 `arch_startup_core_entry`, then `continue`; its PC and stack should both be high.

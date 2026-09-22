@@ -1,7 +1,18 @@
 # Resolve QEMU at launch time so compile-only builds do not require it.
 find_program(QEMU NAMES qemu-system-riscv64 REQUIRED)
+if(NOT DEFINED INITRAMFS)
+    get_filename_component(kernel_dir "${KERNEL_ELF}" DIRECTORY)
+    if(EXISTS "${kernel_dir}/initramfs.cpio")
+        set(INITRAMFS "${kernel_dir}/initramfs.cpio")
+    endif()
+endif()
+
 set(args -machine virt -cpu rv64,ssdbltrp=true,smdbltrp=true,zicfilp=true -m 8192M -smp 4 -bios default
-    -kernel "${KERNEL_ELF}" -nographic)
+    -kernel "${KERNEL_ELF}")
+if(INITRAMFS)
+    list(APPEND args -initrd "${INITRAMFS}")
+endif()
+list(APPEND args -nographic)
 if(MODE STREQUAL "debug")
     list(APPEND args -S -gdb tcp:127.0.0.1:1234)
     message(STATUS "Waiting for GDB on localhost:1234")

@@ -1,9 +1,23 @@
 # Run with cmake -DKERNEL_ELF=build/riscv64-debug/kernel.elf
 #                -P tests/smp/run.cmake
 find_program(QEMU qemu-system-riscv64 REQUIRED)
+
+if(NOT DEFINED INITRAMFS)
+    get_filename_component(kernel_dir "${KERNEL_ELF}" DIRECTORY)
+    if(EXISTS "${kernel_dir}/initramfs.cpio")
+        set(INITRAMFS "${kernel_dir}/initramfs.cpio")
+    endif()
+endif()
+
+set(initrd_args)
+if(INITRAMFS)
+    set(initrd_args -initrd "${INITRAMFS}")
+endif()
+
 foreach(cpu_count IN ITEMS 1 4 65)
     execute_process(
         COMMAND "${QEMU}" -machine virt -bios default -kernel "${KERNEL_ELF}"
+            ${initrd_args}
             -m 256M -smp "${cpu_count}" -nographic -no-reboot
         TIMEOUT 15
         OUTPUT_VARIABLE output

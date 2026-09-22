@@ -8,6 +8,7 @@
 #include <memory/init.h>
 #include <memory/pmm.h>
 #include <memory/vmm.h>
+#include <initramfs/initramfs.h>
 #include <proc/init.h>
 #include <proc/process.h>
 #include <proc/task.h>
@@ -20,6 +21,8 @@ void kmain(struct entry_info entry_info) {
   console_log(_CONSOLE_LOG_SUBJECT, "Entered kmain.\n");
 
   init_virtual_memory(entry_info.device_discovery);
+
+  initramfs_load(&entry_info.device_discovery);
 
   smp_init(&entry_info.device_discovery, entry_info.boot_cpu_hardware_id);
 
