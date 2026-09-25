@@ -147,7 +147,12 @@ void arch_trap_handler(struct trap_frame* tf) {
         tf->a0, tf->a1, tf->a2, tf->a3, tf->a4, tf->a5,
     };
 
+    uint64_t sstatus_sum = (1ULL << 18);
+    __asm__ volatile("csrs sstatus, %0" : : "r"(sstatus_sum) : "memory");
+
     syscall_handler(tf->a7, args, &tf->a0, &tf->a1);
+
+    __asm__ volatile("csrc sstatus, %0" : : "r"(sstatus_sum) : "memory");
 
     return;
   }

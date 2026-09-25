@@ -40,6 +40,22 @@ static inline long _syscall3(long num, long a0, long a1, long a2) {
   return r0;
 }
 
+static inline long _syscall3_ret(long num, long a0, long a1, long a2,
+                                 long* out1) {
+  register long a7 __asm__("a7") = num;
+  register long r0 __asm__("a0") = a0;
+  register long r1 __asm__("a1") = a1;
+  register long r2 __asm__("a2") = a2;
+  __asm__ volatile("ecall"
+                   : "+r"(r0), "+r"(r1), "+r"(r2)
+                   : "r"(a7)
+                   : "memory");
+  if (out1 != NULL) {
+    *out1 = r1;
+  }
+  return r0;
+}
+
 static inline long _syscall4(long num, long a0, long a1, long a2, long a3,
                              long* out1) {
   register long a7 __asm__("a7") = num;
@@ -181,4 +197,57 @@ static inline int sys_cap_copy(uint32_t src_slot, uint32_t dest_cnode_slot,
 
 static inline int sys_cap_delete(uint32_t slot) {
   return (int)_syscall1(SYSCALL_CAP_DELETE, (long)slot);
+}
+
+static inline int sys_channel_create(uint32_t flags, uint32_t out_slot_a,
+                                     uint32_t out_slot_b,
+                                     uint32_t* assigned_slot_a,
+                                     uint32_t* assigned_slot_b) {
+  long r1 = 0;
+  long res = _syscall3_ret(SYSCALL_CHANNEL_CREATE, (long)flags, (long)out_slot_a,
+                           (long)out_slot_b, &r1);
+  if (res == SYS_OK) {
+    if (assigned_slot_a != NULL) {
+      *assigned_slot_a = (uint32_t)(r1 & 0xffffffff);
+    }
+    if (assigned_slot_b != NULL) {
+      *assigned_slot_b = (uint32_t)((r1 >> 32) & 0xffffffff);
+    }
+  }
+  return (int)res;
+}
+
+static inline int sys_channel_write(uint32_t channel_slot, const void* data,
+                                    size_t num_bytes, const uint32_t* caps,
+                                    size_t num_caps) {
+  return (int)_syscall5(SYSCALL_CHANNEL_WRITE, (long)channel_slot, (long)data,
+                        (long)num_bytes, (long)caps, (long)num_caps, NULL);
+}
+
+static inline int sys_channel_read(uint32_t channel_slot, void* data_out,
+                                   size_t max_bytes, size_t* actual_bytes,
+                                   uint32_t* caps_out, size_t max_caps,
+                                   size_t* actual_caps) {
+  long r1 = 0;
+  long res = _syscall5(SYSCALL_CHANNEL_READ, (long)channel_slot, (long)data_out,
+                       (long)max_bytes, (long)caps_out, (long)max_caps, &r1);
+  if (actual_bytes != NULL) {
+    *actual_bytes = (size_t)(r1 & 0xffffffff);
+  }
+  if (actual_caps != NULL) {
+    *actual_caps = (size_t)((r1 >> 32) & 0xffffffff);
+  }
+  return (int)res;
+}
+
+static inline int sys_object_wait_one(uint32_t obj_slot, uint32_t signals,
+                                      uint64_t timeout_ns,
+                                      uint32_t* observed_signals) {
+  long r1 = 0;
+  long res = _syscall3_ret(SYSCALL_OBJECT_WAIT_ONE, (long)obj_slot,
+                           (long)signals, (long)timeout_ns, &r1);
+  if (observed_signals != NULL) {
+    *observed_signals = (uint32_t)r1;
+  }
+  return (int)res;
 }

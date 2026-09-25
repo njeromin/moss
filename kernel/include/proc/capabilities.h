@@ -11,7 +11,8 @@ typedef uint32_t cap_ptr_t;
 
 enum cap_type {
   CAP_TYPE_NONE = 0,
-  CAP_TYPE_ENDPOINT,
+  CAP_TYPE_CHANNEL = 1,
+  CAP_TYPE_ENDPOINT = 1,
   CAP_TYPE_TASK,
   CAP_TYPE_VSPACE,
   CAP_TYPE_FRAME,

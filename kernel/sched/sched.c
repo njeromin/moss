@@ -178,6 +178,19 @@ void sched_exit(int status) {
   dispatch_sched_loop();
 }
 
+void sched_block_current(enum task_state block_state) {
+  size_t cpu_id = arch_cpu_logical_id();
+  struct sched_worker* sched = &scheds[cpu_id];
+  struct task* current = sched->current_task;
+
+  if (current != NULL) {
+    current->state = block_state;
+    sched->current_task = NULL;
+  }
+
+  dispatch_sched_loop();
+}
+
 void sched_start(void) {
   smp_start_secondary_cpus(cpu_start_sched);
   cpu_start_sched();

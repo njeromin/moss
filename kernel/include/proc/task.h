@@ -2,7 +2,6 @@
 
 #include <arch/memory/paging.h>
 #include <asm/trap_layout.h>
-#include <ipc/ipc.h>
 #include <proc/capabilities.h>
 #include <proc/cpu_set.h>
 #include <proc/process.h>
@@ -32,9 +31,6 @@ struct task {
   uint32_t time_slice_remaining;
   size_t assigned_cpu;
   struct cpu_set* cpu_affinity;
-
-  struct ipc_endpoint* waiting_endpoint;
-  struct task* reply_target;
 
   // User stack address and size for cleanup.
   virt_addr_t user_stack_base;

@@ -1,5 +1,7 @@
 #include <syscall/syscall.h>
 
+#include <stddef.h>
+#include <stdint.h>
 #include <arch/memory/layout.h>
 #include <arch/memory/paging.h>
 #include <asm/paging_info.h>
@@ -7,14 +9,13 @@
 #include <common/memory.h>
 #include <common/syscall.h>
 #include <core/console.h>
+#include <ipc/channel.h>
 #include <memory/pmm.h>
 #include <memory/vmm.h>
 #include <proc/capabilities.h>
 #include <proc/process.h>
 #include <proc/task.h>
 #include <sched/sched.h>
-#include <stddef.h>
-#include <stdint.h>
 
 #define _CONSOLE_LOG_SUBJECT "syscall"
 
@@ -448,6 +449,245 @@ void syscall_handler(size_t syscall_num,
         break;
       }
 
+    case SYSCALL_CHANNEL_CREATE:
+      {
+        if (cnode == NULL) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        cap_ptr_t out_slot_a = (cap_ptr_t)args[1];
+        cap_ptr_t out_slot_b = (cap_ptr_t)args[2];
+
+        struct channel_endpoint* ep0 = NULL;
+        struct channel_endpoint* ep1 = NULL;
+        int err = channel_create_pair(&ep0, &ep1);
+        if (err != SYS_OK) {
+          *ret0 = (trap_register_t)err;
+          break;
+        }
+
+        struct capability cap0 = {
+            .type = CAP_TYPE_CHANNEL,
+            .rights = CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_GRANT,
+            .badge = 0,
+            .object = ep0,
+        };
+
+        struct capability cap1 = {
+            .type = CAP_TYPE_CHANNEL,
+            .rights = CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_GRANT,
+            .badge = 0,
+            .object = ep1,
+        };
+
+        cap_ptr_t assigned_a = 0;
+        int ins_a = cap_table_insert(cnode, out_slot_a, &cap0, &assigned_a);
+        if (ins_a != SYS_OK) {
+          channel_endpoint_close(ep0);
+          channel_endpoint_close(ep1);
+          *ret0 = (trap_register_t)ins_a;
+          break;
+        }
+
+        cap_ptr_t assigned_b = 0;
+        int ins_b = cap_table_insert(cnode, out_slot_b, &cap1, &assigned_b);
+        if (ins_b != SYS_OK) {
+          cap_table_delete(cnode, assigned_a);
+          channel_endpoint_close(ep0);
+          channel_endpoint_close(ep1);
+          *ret0 = (trap_register_t)ins_b;
+          break;
+        }
+
+        *ret0 = (trap_register_t)SYS_OK;
+        if (ret1 != NULL) {
+          *ret1 = ((trap_register_t)assigned_a) |
+                  (((trap_register_t)assigned_b) << 32);
+        }
+        break;
+      }
+
+    case SYSCALL_CHANNEL_WRITE:
+      {
+        if (cnode == NULL) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        cap_ptr_t channel_slot = (cap_ptr_t)args[0];
+        virt_addr_t user_data = (virt_addr_t)args[1];
+        size_t data_len = (size_t)args[2];
+        virt_addr_t user_caps = (virt_addr_t)args[3];
+        size_t num_caps = (size_t)args[4];
+
+        if (data_len > CHANNEL_MAX_MESSAGE_BYTES ||
+            num_caps > CHANNEL_MAX_MESSAGE_CAPS) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        if (data_len > 0) {
+          if (user_data >= USER_STACK_TOP ||
+              user_data + data_len > USER_STACK_TOP) {
+            *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+            break;
+          }
+        }
+
+        if (num_caps > 0) {
+          if (user_caps >= USER_STACK_TOP ||
+              user_caps + num_caps * sizeof(cap_ptr_t) > USER_STACK_TOP) {
+            *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+            break;
+          }
+        }
+
+        struct capability cap_channel;
+        int lookup_res = cap_table_lookup(cnode, channel_slot, CAP_TYPE_CHANNEL,
+                                          CAP_RIGHT_WRITE, &cap_channel);
+        if (lookup_res != SYS_OK) {
+          *ret0 = (trap_register_t)lookup_res;
+          break;
+        }
+
+        struct capability transferred[CHANNEL_MAX_MESSAGE_CAPS];
+        const cap_ptr_t* cap_slots = (const cap_ptr_t*)user_caps;
+        int cap_err = SYS_OK;
+
+        for (size_t i = 0; i < num_caps; i++) {
+          cap_ptr_t c_slot = cap_slots[i];
+          cap_err = cap_table_lookup(cnode, c_slot, CAP_TYPE_NONE,
+                                     CAP_RIGHT_GRANT, &transferred[i]);
+          if (cap_err != SYS_OK) {
+            break;
+          }
+        }
+
+        if (cap_err != SYS_OK) {
+          *ret0 = (trap_register_t)cap_err;
+          break;
+        }
+
+        for (size_t i = 0; i < num_caps; i++) {
+          cap_table_delete(cnode, cap_slots[i]);
+        }
+
+        struct channel_endpoint* ep =
+            (struct channel_endpoint*)cap_channel.object;
+        int write_res =
+            channel_write(ep, (const void*)user_data, data_len, transferred,
+                          num_caps);
+        *ret0 = (trap_register_t)write_res;
+        break;
+      }
+
+    case SYSCALL_CHANNEL_READ:
+      {
+        if (cnode == NULL) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        cap_ptr_t channel_slot = (cap_ptr_t)args[0];
+        virt_addr_t user_buf = (virt_addr_t)args[1];
+        size_t max_buf_len = (size_t)args[2];
+        virt_addr_t user_caps_out = (virt_addr_t)args[3];
+        size_t max_caps = (size_t)args[4];
+
+        if (max_buf_len > 0) {
+          if (user_buf >= USER_STACK_TOP ||
+              user_buf + max_buf_len > USER_STACK_TOP) {
+            *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+            break;
+          }
+        }
+
+        if (max_caps > 0) {
+          if (user_caps_out >= USER_STACK_TOP ||
+              user_caps_out + max_caps * sizeof(cap_ptr_t) > USER_STACK_TOP) {
+            *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+            break;
+          }
+        }
+
+        struct capability cap_channel;
+        int lookup_res = cap_table_lookup(cnode, channel_slot, CAP_TYPE_CHANNEL,
+                                          CAP_RIGHT_READ, &cap_channel);
+        if (lookup_res != SYS_OK) {
+          *ret0 = (trap_register_t)lookup_res;
+          break;
+        }
+
+        struct channel_endpoint* ep =
+            (struct channel_endpoint*)cap_channel.object;
+
+        struct capability received_caps[CHANNEL_MAX_MESSAGE_CAPS];
+        size_t actual_len = 0;
+        size_t actual_caps = 0;
+
+        int read_res = channel_read(ep, (void*)user_buf, max_buf_len,
+                                    &actual_len, received_caps, max_caps,
+                                    &actual_caps);
+        if (read_res != SYS_OK) {
+          *ret0 = (trap_register_t)read_res;
+          if (ret1 != NULL) {
+            *ret1 =
+                (trap_register_t)(actual_len | (((uint64_t)actual_caps) << 32));
+          }
+          break;
+        }
+
+        cap_ptr_t* out_slots = (cap_ptr_t*)user_caps_out;
+        for (size_t i = 0; i < actual_caps; i++) {
+          cap_ptr_t assigned = 0;
+          int ins_res =
+              cap_table_insert(cnode, CAP_SLOT_ANY, &received_caps[i],
+                               &assigned);
+          if (ins_res == SYS_OK && out_slots != NULL) {
+            out_slots[i] = assigned;
+          }
+        }
+
+        *ret0 = (trap_register_t)SYS_OK;
+        if (ret1 != NULL) {
+          *ret1 =
+              (trap_register_t)(actual_len | (((uint64_t)actual_caps) << 32));
+        }
+        break;
+      }
+
+    case SYSCALL_OBJECT_WAIT_ONE:
+      {
+        if (cnode == NULL) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        cap_ptr_t obj_slot = (cap_ptr_t)args[0];
+        uint32_t signals = (uint32_t)args[1];
+        uint64_t timeout_ns = (uint64_t)args[2];
+
+        struct capability cap;
+        int lookup_res =
+            cap_table_lookup(cnode, obj_slot, CAP_TYPE_CHANNEL,
+                             CAP_RIGHT_READ, &cap);
+        if (lookup_res != SYS_OK) {
+          *ret0 = (trap_register_t)lookup_res;
+          break;
+        }
+
+        struct channel_endpoint* ep = (struct channel_endpoint*)cap.object;
+        uint32_t observed = 0;
+        int wait_res =
+            channel_wait_one(ep, signals, timeout_ns, &observed);
+        *ret0 = (trap_register_t)wait_res;
+        if (ret1 != NULL) {
+          *ret1 = (trap_register_t)observed;
+        }
+        break;
+      }
+
     case SYSCALL_CNODE_CREATE:
       {
         if (cnode == NULL) {
@@ -500,9 +740,9 @@ void syscall_handler(size_t syscall_num,
         struct capability_table* dest_table = cnode;
         if (dest_cnode_slot != 0 && dest_cnode_slot != CAP_SLOT_CNODE) {
           struct capability cap_cnode;
-          int cnode_res = cap_table_lookup(cnode, dest_cnode_slot,
-                                           CAP_TYPE_CNODE, CAP_RIGHT_WRITE,
-                                           &cap_cnode);
+          int cnode_res =
+              cap_table_lookup(cnode, dest_cnode_slot, CAP_TYPE_CNODE,
+                               CAP_RIGHT_WRITE, &cap_cnode);
           if (cnode_res != SYS_OK) {
             *ret0 = (trap_register_t)cnode_res;
             break;
@@ -511,9 +751,8 @@ void syscall_handler(size_t syscall_num,
         }
 
         cap_ptr_t assigned_slot = 0;
-        int copy_res =
-            cap_table_copy(cnode, src_slot, dest_table, dest_slot, rights_mask,
-                           badge, &assigned_slot);
+        int copy_res = cap_table_copy(cnode, src_slot, dest_table, dest_slot,
+                                      rights_mask, badge, &assigned_slot);
         *ret0 = (trap_register_t)copy_res;
         if (ret1 != NULL) {
           *ret1 = (trap_register_t)assigned_slot;
@@ -529,6 +768,12 @@ void syscall_handler(size_t syscall_num,
         }
 
         cap_ptr_t slot = (cap_ptr_t)args[0];
+        struct capability cap;
+        if (cap_table_lookup(cnode, slot, CAP_TYPE_NONE, 0, &cap) == SYS_OK) {
+          if (cap.type == CAP_TYPE_CHANNEL && cap.object != NULL) {
+            channel_endpoint_close((struct channel_endpoint*)cap.object);
+          }
+        }
         int del_res = cap_table_delete(cnode, slot);
         *ret0 = (trap_register_t)del_res;
         break;

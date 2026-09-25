@@ -16,6 +16,7 @@
 #include <proc/task.h>
 #include <sched/sched.h>
 #include <smp/smp.h>
+#include "ipc/channel.h"
 
 #define _CONSOLE_LOG_SUBJECT "kmain"
 
@@ -60,8 +61,8 @@ static void init_userspace(void) {
 
   struct capability cap_task = {
       .type = CAP_TYPE_TASK,
-      .rights = CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_CALL |
-                CAP_RIGHT_GRANT,
+      .rights =
+          CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_CALL | CAP_RIGHT_GRANT,
       .badge = task->tid,
       .object = task,
   };
@@ -83,6 +84,7 @@ void kmain(struct entry_info entry_info) {
   smp_init(&entry_info.device_discovery, entry_info.boot_cpu_hardware_id);
 
   init_proc_system();
+  init_channels();
 
   sched_init();
 

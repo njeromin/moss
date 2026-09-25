@@ -27,6 +27,17 @@
 #define SYSCALL_IPC_RECV 0x32
 #define SYSCALL_IPC_CALL 0x33
 #define SYSCALL_IPC_REPLY 0x34
+#define SYSCALL_CHANNEL_CREATE 0x30
+#define SYSCALL_CHANNEL_WRITE 0x31
+#define SYSCALL_CHANNEL_READ 0x32
+#define SYSCALL_CHANNEL_CALL 0x33
+#define SYSCALL_OBJECT_WAIT_ONE 0x34
+
+// Signals
+#define SIGNAL_NONE 0u
+#define SIGNAL_READABLE (1u << 0)
+#define SIGNAL_WRITABLE (1u << 1)
+#define SIGNAL_PEER_CLOSED (1u << 2)
 
 // Capability Management Syscalls
 #define SYSCALL_CNODE_CREATE 0x40
@@ -43,6 +54,10 @@ enum syscall_error {
   SYS_ERR_ALREADY_MAPPED = -5,
   SYS_ERR_NO_SLOT = -6,
   SYS_ERR_NOT_FOUND = -7,
+  SYS_ERR_PEER_CLOSED = -8,
+  SYS_ERR_WOULD_BLOCK = -9,
+  SYS_ERR_BUFFER_TOO_SMALL = -10,
+  SYS_ERR_TIMED_OUT = -11,
 };
 
 // Reserved Initial Capability Slots

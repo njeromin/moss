@@ -1,6 +1,7 @@
 #include <proc/process.h>
 
 #include <common/memory.h>
+#include <ipc/channel.h>
 #include <memory/kmem_cache.h>
 #include <proc/capabilities.h>
 
@@ -36,6 +37,16 @@ struct process* process_create(void) {
 void process_destroy(struct process* proc) {
   if (proc == NULL) {
     return;
+  }
+
+  for (size_t i = 0; i < proc->capabilities.capacity; i++) {
+    if (proc->capabilities.slots[i].type == CAP_TYPE_CHANNEL &&
+        proc->capabilities.slots[i].object != NULL) {
+      channel_endpoint_close(
+          (struct channel_endpoint*)proc->capabilities.slots[i].object);
+      proc->capabilities.slots[i].type = CAP_TYPE_NONE;
+      proc->capabilities.slots[i].object = NULL;
+    }
   }
 
   vmm_destroy_space(&proc->memory_space);
