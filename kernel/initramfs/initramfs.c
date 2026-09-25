@@ -158,8 +158,6 @@ int initramfs_load(const struct device_discovery_info* device_discovery_info) {
       break;
     }
 
-    console_log(_CONSOLE_LOG_SUBJECT, "Entry: \"%s\" (size %zu bytes)\n",
-                filename, (size_t)filesize);
     file_count++;
 
     offset = next_offset;

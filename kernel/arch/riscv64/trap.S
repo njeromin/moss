@@ -4,6 +4,7 @@
 .globl arch_trap_entry
 .balign 4
 arch_trap_entry:
+  lpad 0
   // Swap sp with sscratch to determine privilege mode.
   // In S-mode kernel execution, sscratch is 0.
   // When running in U-mode, sscratch contains the kernel stack pointer.
@@ -27,11 +28,15 @@ arch_trap_entry:
   csrr s0, sscratch               // Retrieve user sp
   sd s0, TF_SP(sp)                // Save original user sp in trap frame
   csrw sscratch, zero             // In kernel mode, sscratch is 0
+  sd tp, TF_TP(sp)                // Save user tp in trap frame
+  ld tp, TF_KERNEL_TP(sp)         // Restore kernel CPU identity in tp
+  j .Lsave_context_rest
 
 .Lsave_context:
+  sd tp, TF_TP(sp)
+.Lsave_context_rest:
   sd ra, TF_RA(sp)
   sd gp, TF_GP(sp)
-  sd tp, TF_TP(sp)
   sd t0, TF_T0(sp)
   sd t1, TF_T1(sp)
   sd t2, TF_T2(sp)

@@ -26,6 +26,8 @@ endif()
 
 set(USERSPACE_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/linker.ld")
 target_link_options(userspace_options INTERFACE "LINKER:-T,${USERSPACE_LINKER_SCRIPT}")
+target_include_directories(userspace_options INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/libc/include")
+target_link_libraries(userspace_options INTERFACE common)
 
 add_library(userspace_crt OBJECT libc/crt0.S)
 target_link_libraries(userspace_crt PUBLIC userspace_options)
@@ -52,7 +54,7 @@ endfunction()
 # automatically for inclusion in the initramfs CPIO archive.
 function(add_userspace_executable target)
     add_executable(${target} ${ARGN})
-    target_link_libraries(${target} PRIVATE userspace_options userspace_crt)
+    target_link_libraries(${target} PRIVATE userspace_options userspace_crt common)
     set_target_properties(${target} PROPERTIES SUFFIX .elf
         RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/userspace")
     set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${USERSPACE_LINKER_SCRIPT}")

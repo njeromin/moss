@@ -179,6 +179,15 @@ void sched_exit(int status) {
 }
 
 void sched_start(void) {
-  smp_release_secondary_cpus((uintptr_t)cpu_start_sched);
+  smp_start_secondary_cpus(cpu_start_sched);
   cpu_start_sched();
 }
+
+struct task* sched_current_task(void) {
+  if (scheds == NULL) {
+    return NULL;
+  }
+  size_t cpu_id = arch_cpu_logical_id();
+  return scheds[cpu_id].current_task;
+}
+

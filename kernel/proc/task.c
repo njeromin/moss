@@ -8,10 +8,6 @@
 #include <memory/pmm.h>
 #include <memory/vmm.h>
 #include <sync/spinlock.h>
-
-#define USER_STACK_SIZE (64 * 1024)
-#define USER_STACK_TOP 0x0000003fffff0000ULL
-
 #define KERNEL_STACK_SIZE (16 * 1024)
 
 static size_t next_tid = 1;

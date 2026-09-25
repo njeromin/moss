@@ -1,9 +1,7 @@
 #pragma once
 
 #include <asm/trap_layout.h>
-
-#define SYSCALL_YIELD 0x0
-#define SYSCALL_EXIT 0x1
+#include <common/syscall.h>
 
 // Handle system calls invoked from user mode.
 void syscall_handler(size_t syscall_num,

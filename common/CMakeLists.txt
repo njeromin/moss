@@ -9,6 +9,11 @@ target_compile_features(common PRIVATE c_std_11)
 target_compile_options(common PRIVATE
     -ffreestanding -fno-pic -fno-pie -nostdlibinc
     -Wall -Wextra)
+if(OS_ARCH STREQUAL "riscv64")
+    target_compile_options(common PRIVATE
+        -march=rv64imac_zicfilp1p0 -menable-experimental-extensions -fcf-protection=branch
+        -mabi=lp64 -mcmodel=medany -mno-relax)
+endif()
 
 # Add further freestanding sources here as they are introduced. The resulting
 # library can be linked by the kernel and userspace programs independently of

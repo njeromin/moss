@@ -33,8 +33,8 @@ static struct cpu* cpus;
 static struct cpu* boot_cpu;
 static size_t cpu_count;
 static bool startup_requested;
-static bool jump_addr_released;
-static uintptr_t secondary_release_address;
+static void (*secondary_entry_fn)(void);
+static bool secondary_cpus_released;
 
 static bool cpu_node_enabled(const void* dtb, const struct fdt_node* node) {
   if (!fdt_property_string_is(dtb, node, "device_type", "cpu")) {
@@ -185,22 +185,25 @@ static _Noreturn void secondary_entry(size_t id) {
   }
   // Publish only after architecture setup and entry onto this CPU's stack.
   __atomic_store_n(&cpus[id].started, true, __ATOMIC_RELEASE);
-  while (!__atomic_load_n(&jump_addr_released, __ATOMIC_ACQUIRE)) {
+  while (!__atomic_load_n(&secondary_cpus_released, __ATOMIC_ACQUIRE)) {
     arch_cpu_relax();
   }
-  void (*entry_fn)(void) = (void (*)(void))secondary_release_address;
-  if (entry_fn != NULL) {
-    entry_fn();
+  if (secondary_entry_fn != NULL) {
+    secondary_entry_fn();
+  }
+  while (true) {
+    arch_cpu_idle();
   }
   kpanic("Secondary CPU entry returned.\n");
 }
 
-void smp_start_secondary_cpus(void) {
+void smp_start_secondary_cpus(void (*entry_fn)(void)) {
   if (boot_cpu == NULL || startup_requested ||
       arch_cpu_logical_id() != boot_cpu->id) {
     kpanic("Invalid SMP startup request.\n");
   }
   startup_requested = true;
+  secondary_entry_fn = entry_fn;
 
   for (size_t i = 0; i < cpu_count; ++i) {
     struct cpu* cpu = &cpus[i];
@@ -236,10 +239,11 @@ void smp_start_secondary_cpus(void) {
       arch_cpu_relax();
     }
 
-    console_log("smp", "CPU %zu started and parked.\n", cpu->id);
+    console_log("smp", "CPU %zu started.\n", cpu->id);
   }
 
   arch_smp_finish_startup();
+  __atomic_store_n(&secondary_cpus_released, true, __ATOMIC_RELEASE);
   console_log("smp", "All %zu CPUs acknowledged startup.\n", cpu_count);
 }
 
@@ -251,21 +255,8 @@ void smp_request_reschedule(size_t cpu_id) {
   if (cpu_id >= cpu_count) {
     kpanic("Invalid reschedule target.\n");
   }
+  if (!__atomic_load_n(&cpus[cpu_id].started, __ATOMIC_ACQUIRE)) {
+    return;
+  }
   arch_smp_reschedule_cpu(cpus[cpu_id].hardware_id);
-}
-
-void smp_release_secondary_cpus(uintptr_t entry_address) {
-  if (!startup_requested || arch_cpu_logical_id() != boot_cpu->id) {
-    kpanic("Invalid scheduler release.\n");
-  }
-  if (entry_address == 0) {
-    kpanic("Invalid secondary CPU release address.\n");
-  }
-  for (size_t i = 0; i < cpu_count; ++i) {
-    if (!__atomic_load_n(&cpus[i].started, __ATOMIC_ACQUIRE)) {
-      kpanic("CPU has not acknowledged scheduler readiness.\n");
-    }
-  }
-  secondary_release_address = entry_address;
-  __atomic_store_n(&jump_addr_released, true, __ATOMIC_RELEASE);
 }

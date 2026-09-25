@@ -9,6 +9,8 @@
 #include <memory/pmm.h>
 #include <memory/vmm.h>
 #include <initramfs/initramfs.h>
+#include <proc/capabilities.h>
+#include <proc/elf_loader.h>
 #include <proc/init.h>
 #include <proc/process.h>
 #include <proc/task.h>
@@ -16,6 +18,60 @@
 #include <smp/smp.h>
 
 #define _CONSOLE_LOG_SUBJECT "kmain"
+
+static void init_userspace(void) {
+  const void* initd_bin = NULL;
+  size_t initd_size = 0;
+  if (initramfs_find_file("initd", &initd_bin, &initd_size) != 0) {
+    kpanic("Failed to find init task in initramfs.\n");
+  }
+
+  struct process* proc = process_create();
+  if (proc == NULL) {
+    kpanic("Failed to create initd process.\n");
+  }
+
+  struct elf_load_result load_result;
+  if (elf_load_bootstrap(proc, initd_bin, initd_size, &load_result) !=
+      ELF_LOAD_OK) {
+    kpanic("Failed to load bootstrap initd ELF binary.\n");
+  }
+
+  struct task* task = task_create(proc, load_result.entry_point, 0);
+  if (task == NULL) {
+    kpanic("Failed to create initd task.\n");
+  }
+
+  struct capability cap_vspace = {
+      .type = CAP_TYPE_VSPACE,
+      .rights = CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_GRANT,
+      .badge = proc->pid,
+      .object = proc,
+  };
+  cap_table_insert(&proc->capabilities, CAP_SLOT_VSPACE, &cap_vspace, NULL);
+
+  struct capability cap_cnode = {
+      .type = CAP_TYPE_CNODE,
+      .rights = CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_GRANT,
+      .badge = proc->pid,
+      .object = &proc->capabilities,
+  };
+  cap_table_insert(&proc->capabilities, CAP_SLOT_CNODE, &cap_cnode, NULL);
+
+  struct capability cap_task = {
+      .type = CAP_TYPE_TASK,
+      .rights = CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_CALL |
+                CAP_RIGHT_GRANT,
+      .badge = task->tid,
+      .object = task,
+  };
+  cap_table_insert(&proc->capabilities, CAP_SLOT_TASK, &cap_task, NULL);
+
+  console_log(_CONSOLE_LOG_SUBJECT,
+              "Scheduling init task (tid=%zu, entry=0x%zx).\n", task->tid,
+              (size_t)load_result.entry_point);
+  sched_schedule(task);
+}
 
 void kmain(struct entry_info entry_info) {
   console_log(_CONSOLE_LOG_SUBJECT, "Entered kmain.\n");
@@ -30,50 +86,11 @@ void kmain(struct entry_info entry_info) {
 
   sched_init();
 
-  smp_start_secondary_cpus();
-
-  // Create test process and task
-  struct process* proc = process_create();
-  if (proc == NULL) {
-    kpanic("Failed to create test process.\n");
-  }
-
-  // 1. addi a7, zero, 42 (0x02a00893), 2. ecall (0x00000073),
-  // 3. ebreak (0x00100073), 4. j . (0x0000006f)
-  static const uint32_t test_user_code[] = {
-      0x02a00893,  // addi a7, zero, 42
-      0x00000073,  // ecall
-      0x00100073,  // ebreak
-      0x0000006f,  // j . (jal x0, 0)
-  };
-
-  uintptr_t code_phys;
-  if (pmm_alloc(1, &code_phys) != PMM_OK) {
-    kpanic("Failed to allocate test code page.\n");
-  }
-  uintptr_t user_entry = 0x0000000010000000ULL;
-  memory_set((void*)arch_phys_to_virt(code_phys), 0, PMM_FRAME_SIZE);
-  memory_copy((void*)arch_phys_to_virt(code_phys), test_user_code,
-              sizeof(test_user_code));
-
-  if (vmm_map(&proc->memory_space, user_entry, code_phys, PMM_FRAME_SIZE,
-              PAGE_USER | PAGE_READ | PAGE_EXEC) != VMM_OK) {
-    kpanic("Failed to map test code page into user space.\n");
-  }
-
-  struct task* task1 = task_create(proc, user_entry, 0);
-  struct task* task2 = task_create(proc, user_entry, 0);
-  if (task1 == NULL || task2 == NULL) {
-    kpanic("Failed to create test tasks.\n");
-  }
-
-  console_log(_CONSOLE_LOG_SUBJECT, "Scheduling test tasks (tid=%zu,%zu).\n",
-              task1->tid, task2->tid);
-  sched_schedule(task1);
-  sched_schedule(task2);
+  init_userspace();
 
   sched_start();
 
   console_log(_CONSOLE_LOG_SUBJECT, "Reached end of kmain.\n");
+
   arch_panic_halt();
 }

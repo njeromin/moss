@@ -9,10 +9,9 @@
 void smp_init(const struct device_discovery_info* discovery,
               cpu_hardware_id_t boot_cpu_hardware_id);
 
-// Boot CPU only, after shared subsystem initialisation. Starts secondaries and
-// waits for acknowledgement; secondaries wait for scheduler release.
-void smp_start_secondary_cpus(void);
+// Boot CPU only. Starts secondary CPUs directly with the given entry function
+// (e.g. the scheduler worker loop) and waits for acknowledgement.
+void smp_start_secondary_cpus(void (*entry_fn)(void));
 
 size_t smp_cpu_count(void);
 void smp_request_reschedule(size_t cpu_id);
-void smp_release_secondary_cpus(uintptr_t entry_address);

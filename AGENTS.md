@@ -31,8 +31,8 @@ Only the OpenSBI boot hart may use this entry. Production secondary harts use
 identity mapping. Each secondary has its own 16 KiB PMM-backed stack. The boot
 CPU starts them serially after shared subsystem initialisation and waits up to
 five seconds per CPU for a release/acquire acknowledgement. The trampoline
-mapping is removed after all acknowledgements. Secondaries remain parked with
-supervisor interrupts disabled; scheduler handover is not implemented yet.
+mapping is removed after all acknowledgements. Secondaries then enter the
+provided entry function (such as the scheduler worker loop).
 Kernel CPU identity currently lives in `tp`; future user trap entry must restore
 that identity before calling code which queries it. Secondary stacks currently
 use the HHDM without guard pages. CPU feature initialisation preserves the boot

@@ -29,6 +29,7 @@
 .global start
 .type start, @function
 start:
+  lpad 0
   // OpenSBI boot hart only: S-mode, satp=0, a0=hart ID, a1=physical DTB.
   // Secondary harts need a separate entry and stack.
   // Keep interrupts disabled until the kernel installs a real trap handler.
@@ -173,6 +174,7 @@ boot_tables_end:
 higher_half_entry:
   .cfi_startproc
   .cfi_undefined ra
+  lpad 0
 
   // All symbol references below use high virtual addresses.
   la t0, .Lhalt

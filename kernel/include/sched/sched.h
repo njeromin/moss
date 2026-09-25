@@ -13,3 +13,5 @@ void sched_preempt(void);
 void sched_exit(int status);
 
 void sched_start(void);
+
+struct task* sched_current_task(void);

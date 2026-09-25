@@ -5,9 +5,12 @@
 .type arch_user_enter, @function
 .balign 4
 arch_user_enter:
+  lpad 0
   // a0 holds pointer to struct trap_frame on top of current thread's kernel stack.
-  // Switch to the trap frame.
   mv sp, a0
+
+  // Preserve Kernel CPU logical ID (tp) in trap frame for restoration upon trap
+  sd tp, TF_KERNEL_TP(sp)
 
   // Restore CSRs: sstatus and sepc
   ld t0, TF_SSTATUS(sp)

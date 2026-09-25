@@ -38,6 +38,7 @@
 #define TF_SEPC 256
 #define TF_SCAUSE 264
 #define TF_STVAL 272
+#define TF_KERNEL_TP 280
 
 // Total trap frame allocation size on stack (16-byte aligned for RISC-V ABI)
 #define TF_SIZE 288
@@ -91,7 +92,14 @@ struct __attribute__((aligned(16))) trap_frame {
   trap_register_t sepc;
   trap_register_t scause;
   trap_register_t stval;
+
+  // Preserved Kernel CPU logical ID (tp)
+  trap_register_t kernel_tp;
 };
+
+_Static_assert(offsetof(struct trap_frame, kernel_tp) == TF_KERNEL_TP,
+               "TF_KERNEL_TP offset mismatch");
+
 
 _Static_assert(offsetof(struct trap_frame, ra) == TF_RA,
                "TF_RA offset mismatch");

@@ -47,8 +47,10 @@ if(OS_ARCH STREQUAL "x86_64")
         -mno-red-zone -mgeneral-regs-only -masm=intel)
 elseif(OS_ARCH STREQUAL "riscv64")
     target_compile_options(kernel_options INTERFACE
-        -march=rv64imac -mabi=lp64 -mcmodel=medany -mno-relax)
-    target_link_options(kernel_options INTERFACE -march=rv64imac -mabi=lp64
+        -march=rv64imac_zicfilp1p0 -menable-experimental-extensions -fcf-protection=branch
+        -mabi=lp64 -mcmodel=medany -mno-relax)
+    target_link_options(kernel_options INTERFACE
+        -march=rv64imac_zicfilp1p0 -menable-experimental-extensions -mabi=lp64
         "LINKER:--no-relax")
 elseif(OS_ARCH STREQUAL "aarch64")
     target_compile_options(kernel_options INTERFACE -mgeneral-regs-only)

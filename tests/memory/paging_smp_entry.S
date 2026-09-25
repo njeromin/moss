@@ -3,6 +3,7 @@
 .balign 16
 .global paging_smp_entry
 paging_smp_entry:
+  lpad 0
   csrci sstatus, 2
   csrw sie, zero
   csrw sscratch, zero

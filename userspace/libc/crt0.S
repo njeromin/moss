@@ -28,8 +28,8 @@ _start:
     // Call user main entry
     call main
 
-    // Exit syscall: return status in a0, syscall number in a7
-    li a7, 0
+    // Exit syscall: return status in a0, syscall number in a7 (SYSCALL_EXIT = 1)
+    li a7, 1
     ecall
 
 .Lexit_loop:

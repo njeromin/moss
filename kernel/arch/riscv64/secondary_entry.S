@@ -2,6 +2,7 @@
 .balign 4096
 .global secondary_entry
 secondary_entry:
+  lpad 0
   csrci sstatus, 2
   csrw sie, zero
   csrw sscratch, zero
