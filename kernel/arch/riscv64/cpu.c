@@ -1,6 +1,7 @@
 #include <arch/cpu.h>
 #include <asm/hw_features.h>  // Needed as this implements arch_has_svadu()
 
+#include <arch/memory/paging.h>
 #include <arch/trap.h>
 #include <core/console.h>
 #include <core/panic.h>
@@ -96,6 +97,7 @@ void arch_cpu_init(cpu_hardware_id_t hart_id) {
 
   // Local trap vectors must be configured on every CPU
   arch_trap_init();
+  arch_paging_init_cpu();
 
   if (!features.probed) {
     struct sbi_ret hsm_probe = sbi_probe_extension(SBI_EXT_HSM);

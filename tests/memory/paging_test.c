@@ -30,6 +30,57 @@ static int level_at(uintptr_t root, uintptr_t virt) {
   return -1;
 }
 
+static void asid_test(uintptr_t master) {
+  uintptr_t first, second, replacement;
+  uintptr_t first_frame, second_frame, replacement_frame;
+  size_t first_tag = arch_paging_alloc_tag();
+  size_t second_tag = arch_paging_alloc_tag();
+  if (first_tag != 0 && second_tag != 0) {
+    CHECK(first_tag != second_tag);
+  }
+
+  CHECK(arch_paging_create_space(&first) == PAGING_OK);
+  CHECK(arch_paging_create_space(&second) == PAGING_OK);
+  CHECK(pmm_alloc(1, &first_frame) == PMM_OK);
+  CHECK(pmm_alloc(1, &second_frame) == PMM_OK);
+  uintptr_t alias = 12 * GIB;
+  *(uint64_t*)arch_phys_to_virt(first_frame) = 0x1111;
+  *(uint64_t*)arch_phys_to_virt(second_frame) = 0x2222;
+  CHECK(arch_paging_map(first, alias, first_frame, PAGE_READ | PAGE_WRITE) ==
+        PAGING_OK);
+  CHECK(arch_paging_map(second, alias, second_frame, PAGE_READ | PAGE_WRITE) ==
+        PAGING_OK);
+
+  arch_paging_switch_space(first, first_tag);
+  CHECK(*(volatile uint64_t*)alias == 0x1111);
+  arch_paging_switch_space(second, second_tag);
+  CHECK(*(volatile uint64_t*)alias == 0x2222);
+  arch_paging_switch_space(first, first_tag);
+  CHECK(*(volatile uint64_t*)alias == 0x1111);
+  arch_paging_switch_space(master, 0);
+
+  arch_paging_destroy_space(first);
+  arch_paging_release_tag(first_tag);
+  size_t replacement_tag = arch_paging_alloc_tag();
+  CHECK(replacement_tag == first_tag);
+  CHECK(arch_paging_create_space(&replacement) == PAGING_OK);
+  CHECK(pmm_alloc(1, &replacement_frame) == PMM_OK);
+  *(uint64_t*)arch_phys_to_virt(replacement_frame) = 0x3333;
+  CHECK(arch_paging_map(replacement, alias, replacement_frame,
+                        PAGE_READ | PAGE_WRITE) == PAGING_OK);
+  arch_paging_switch_space(replacement, replacement_tag);
+  CHECK(*(volatile uint64_t*)alias == 0x3333);
+  arch_paging_switch_space(master, 0);
+
+  arch_paging_destroy_space(second);
+  arch_paging_release_tag(second_tag);
+  arch_paging_destroy_space(replacement);
+  arch_paging_release_tag(replacement_tag);
+  CHECK(pmm_free(first_frame, 1) == PMM_OK);
+  CHECK(pmm_free(second_frame, 1) == PMM_OK);
+  CHECK(pmm_free(replacement_frame, 1) == PMM_OK);
+}
+
 void paging_test(void) {
   uintptr_t root, phys;
   unsigned permissions;
@@ -123,6 +174,7 @@ void paging_test(void) {
   arch_paging_switch_space(master, 0);
   CHECK(pmm_free(frame, 1) == PMM_OK);
   arch_paging_destroy_space(root);
+  asid_test(master);
   console_log("paging_test",
               "Large-page mapping and partial unmap tests passed.\n");
   extern void paging_smp_test(void);

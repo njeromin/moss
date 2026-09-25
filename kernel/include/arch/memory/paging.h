@@ -48,8 +48,17 @@ int arch_paging_create_space(phys_addr_t* out_root);
 // Caller must first switch every hart away and prevent further use of this root.
 void arch_paging_destroy_space(phys_addr_t root);
 
+// Probe the local CPU's ASID support. The boot CPU establishes the policy;
+// later CPUs must support at least that width.
+void arch_paging_init_cpu(void);
+
+// Allocate an address-space tag. Zero is a safe, unallocated fallback that
+// requires a local fence on every switch. Release only after destroying the root.
+size_t arch_paging_alloc_tag(void);
+void arch_paging_release_tag(size_t tag);
+
 // Switch the hardware MMU to the given root (e.g. writes satp on RISC-V).
-void arch_paging_switch_space(phys_addr_t root, size_t space_id);
+void arch_paging_switch_space(phys_addr_t root, size_t tag);
 
 /* Map one base 4KiB page in the specified root page table. */
 int arch_paging_map(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,

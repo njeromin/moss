@@ -1,15 +1,24 @@
 #include "./paging_hw.h"
-#include "sbi.h"
+#include <sbi.h>
 #include <asm/paging_info.h>
 #include <core/panic.h>
 
-void riscv64_paging_activate(phys_addr_t root, size_t space_id) {
+void riscv64_paging_activate(phys_addr_t root, size_t tag) {
   uint64_t satp =
-      (8ULL << 60) | ((space_id & 0xffffULL) << 44) | (root >> PAGE_SHIFT);
-  __asm__ volatile("sfence.vma\n\tcsrw satp, %0\n\tsfence.vma"
-                   :
-                   : "r"(satp)
-                   : "memory");
+      (8ULL << 60) | ((tag & 0xffffULL) << 44) | (root >> PAGE_SHIFT);
+  uint64_t current_satp;
+  __asm__ volatile("csrr %0, satp" : "=r"(current_satp));
+  if (current_satp == satp) {
+    return;
+  }
+
+  __asm__ volatile("csrw satp, %0" : : "r"(satp) : "memory");
+
+  // Allocated ASIDs remain bound to their roots until a synchronous all-hart
+  // flush at destruction. ASID zero can be shared, so fence every switch to it.
+  if (tag == 0) {
+    __asm__ volatile("sfence.vma zero, zero" ::: "memory");
+  }
 }
 
 void arch_paging_flush_all(void) {

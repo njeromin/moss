@@ -5,6 +5,7 @@
 #include <asm/hw_features.h>
 #include <asm/paging_info.h>
 #include <common/memory.h>
+#include <core/panic.h>
 #include <memory/pmm.h>
 #include <sync/spinlock.h>
 #include "./paging_hw.h"
@@ -12,6 +13,58 @@
 // Shared kernel tables require one lock across all roots. Lock order is
 // paging_lock -> PMM lock. Queries hold this lock too, protecting table lifetime.
 static struct spinlock paging_lock = SPINLOCK_INIT;
+
+// ASIDs are local to each hart, but one system-wide allocation lets a space
+// retain its tag when scheduled on another hart. Zero is never allocated.
+static uint8_t allocated_asids[65536 / 8];
+static size_t asid_max;
+static bool asids_initialised;
+
+void arch_paging_init_cpu(void) {
+  uint64_t original;
+  uint64_t observed;
+  __asm__ volatile("csrr %0, satp" : "=r"(original));
+  uint64_t probe = original | (0xffffULL << 44);
+  __asm__ volatile(
+      "csrw satp, %1\n\tcsrr %0, satp\n\tcsrw satp, %2\n\tsfence.vma zero, zero"
+      : "=&r"(observed)
+      : "r"(probe), "r"(original)
+      : "memory");
+  size_t supported = (observed >> 44) & 0xffffULL;
+  if (!asids_initialised) {
+    asid_max = supported;
+    asids_initialised = true;
+  } else if (supported < asid_max) {
+    kpanic("Secondary CPU has too few ASID bits.\n");
+  }
+}
+
+size_t arch_paging_alloc_tag(void) {
+  bool irq = spin_lock_irqsave(&paging_lock);
+  for (size_t tag = 1; tag <= asid_max; ++tag) {
+    size_t byte = tag / 8;
+    uint8_t bit = 1u << (tag % 8);
+    if (!(allocated_asids[byte] & bit)) {
+      allocated_asids[byte] |= bit;
+      spin_unlock_irqrestore(&paging_lock, irq);
+      return tag;
+    }
+  }
+  spin_unlock_irqrestore(&paging_lock, irq);
+  return 0;
+}
+
+void arch_paging_release_tag(size_t tag) {
+  if (tag == 0) {
+    return;
+  }
+  bool irq = spin_lock_irqsave(&paging_lock);
+  if (tag > asid_max || !(allocated_asids[tag / 8] & (1u << (tag % 8)))) {
+    kpanic("Releasing an unallocated ASID.\n");
+  }
+  allocated_asids[tag / 8] &= ~(1u << (tag % 8));
+  spin_unlock_irqrestore(&paging_lock, irq);
+}
 
 #define SV39_ROOT_ENTRIES 512
 #define SV39_USER_ENTRIES 256
@@ -224,8 +277,8 @@ static void destroy_space_locked(phys_addr_t root) {
   arch_paging_flush_all();
 }
 
-static void switch_space_locked(phys_addr_t root, size_t space_id) {
-  riscv64_paging_activate(root, space_id);
+static void switch_space_locked(phys_addr_t root, size_t tag) {
+  riscv64_paging_activate(root, tag);
 }
 
 static int map_leaf(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
@@ -646,8 +699,8 @@ int arch_paging_unmap_range(phys_addr_t root, virt_addr_t virt, size_t size) {
   return result;
 }
 
-void arch_paging_switch_space(phys_addr_t root, size_t space_id) {
+void arch_paging_switch_space(phys_addr_t root, size_t tag) {
   bool irq = spin_lock_irqsave(&paging_lock);
-  switch_space_locked(root, space_id);
+  switch_space_locked(root, tag);
   spin_unlock_irqrestore(&paging_lock, irq);
 }

@@ -85,8 +85,11 @@ enum vmm_status vmm_create_space(struct vmm_space* space) {
     return VMM_ERROR;
   }
 
-  return (arch_paging_create_space(&space->root_phys) == PAGING_OK) ? VMM_OK
-                                                                    : VMM_ERROR;
+  if (arch_paging_create_space(&space->root_phys) != PAGING_OK) {
+    return VMM_ERROR;
+  }
+  space->tag = arch_paging_alloc_tag();
+  return VMM_OK;
 }
 
 enum vmm_status vmm_destroy_space(struct vmm_space* space) {
@@ -95,13 +98,15 @@ enum vmm_status vmm_destroy_space(struct vmm_space* space) {
   }
 
   arch_paging_destroy_space(space->root_phys);
+  arch_paging_release_tag(space->tag);
   space->root_phys = 0;
+  space->tag = 0;
   return VMM_OK;
 }
 
-void vmm_switch_space(const struct vmm_space* space, size_t space_id) {
+void vmm_switch_space(const struct vmm_space* space) {
   if (space != NULL && space->root_phys != 0) {
-    arch_paging_switch_space(space->root_phys, space_id);
+    arch_paging_switch_space(space->root_phys, space->tag);
   }
 }
 

@@ -30,7 +30,7 @@ static void activate_task(struct sched_worker* sched, struct task* task,
   sched->current_task = task;
 
   // Switch address space.
-  vmm_switch_space(&task->process->memory_space, task->process->pid);
+  vmm_switch_space(&task->process->memory_space);
 
   // Program timer for the task's time slice.
   uint64_t slice_ticks = arch_timer_nanos_to_ticks(
@@ -203,4 +203,3 @@ struct task* sched_current_task(void) {
   size_t cpu_id = arch_cpu_logical_id();
   return scheds[cpu_id].current_task;
 }
-
