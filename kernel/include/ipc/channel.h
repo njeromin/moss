@@ -7,8 +7,6 @@
 #include <sync/spinlock.h>
 #include <proc/capabilities.h>
 
-#define CHANNEL_MAX_MESSAGE_BYTES 4096
-#define CHANNEL_MAX_MESSAGE_CAPS 8
 #define CHANNEL_MAX_QUEUE_DEPTH 64
 #define CHANNEL_INLINE_MESSAGE_BYTES 256
 

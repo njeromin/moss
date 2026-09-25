@@ -26,8 +26,17 @@ endif()
 
 set(USERSPACE_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/linker.ld")
 target_link_options(userspace_options INTERFACE "LINKER:-T,${USERSPACE_LINKER_SCRIPT}")
-target_include_directories(userspace_options INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/libc/include")
+target_include_directories(userspace_options INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/libc/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/libfsd/include"
+)
 target_link_libraries(userspace_options INTERFACE common)
+
+add_library(libc STATIC
+    libc/src/string.c
+    libc/src/memory.c
+)
+target_link_libraries(libc PUBLIC userspace_options)
 
 add_library(userspace_crt OBJECT libc/crt0.S)
 target_link_libraries(userspace_crt PUBLIC userspace_options)
@@ -54,21 +63,24 @@ endfunction()
 # automatically for inclusion in the initramfs CPIO archive.
 function(add_userspace_executable target)
     add_executable(${target} ${ARGN})
-    target_link_libraries(${target} PRIVATE userspace_options userspace_crt common)
+    target_link_libraries(${target} PRIVATE libc userspace_options userspace_crt common)
     set_target_properties(${target} PROPERTIES SUFFIX .elf
         RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/userspace")
     set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${USERSPACE_LINKER_SCRIPT}")
     register_userspace_program(${target})
 endfunction()
 
-# User-space programme subdirectories
+# User-space libraries and programme subdirectories
+add_subdirectory(libfsd)
 add_subdirectory(services/initd)
+add_subdirectory(services/ext2d)
 
 # List of user-space programmes to package into the CPIO newc archive.
 # Future programmes or services can be added to this list or registered using
 # register_userspace_program(<target> [ARCHIVE_PATH <name>]).
 set(USERSPACE_PROGRAMS
     initd
+    ext2d
 )
 
 foreach(prog IN LISTS USERSPACE_PROGRAMS)
