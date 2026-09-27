@@ -1,10 +1,10 @@
 #pragma once
 
-#include <arch/trap.h>
-#include <core/kmain.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <arch/trap.h>
+#include <core/kmain.h>
 
 // Callback function type for hardware timer tick events.
 typedef void (*arch_timer_callback_fn)(struct trap_frame* tf);
@@ -20,6 +20,9 @@ void arch_timer_init_cpu(void);
 
 // Returns true if the timer has been initialised.
 bool arch_timer_is_initialised(void);
+
+// Returns true if the timer supports direct architectural access without firmware trapping.
+bool arch_timer_has_direct(void);
 
 // Returns the timer frequency in Hz (ticks per second).
 uint64_t arch_timer_get_frequency(void);

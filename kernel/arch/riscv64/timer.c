@@ -181,6 +181,10 @@ bool arch_timer_is_initialised(void) {
   return s_initialised;
 }
 
+bool arch_timer_has_direct(void) {
+  return s_has_sstc;
+}
+
 uint64_t arch_timer_get_frequency(void) {
   return s_frequency;
 }

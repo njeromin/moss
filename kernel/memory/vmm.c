@@ -97,7 +97,7 @@ enum vmm_status vmm_destroy_space(struct vmm_space* space) {
     return VMM_ERROR;
   }
 
-  arch_paging_destroy_space(space->root_phys);
+  arch_paging_destroy_space(space->root_phys, space->tag);
   arch_paging_release_tag(space->tag);
   space->root_phys = 0;
   space->tag = 0;

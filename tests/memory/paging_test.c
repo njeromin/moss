@@ -1,11 +1,12 @@
 // Run in the separate paging_tests.elf image with the run_paging_tests target.
+#include <arch/cpu.h>
 #include <arch/memory/layout.h>
 #include <arch/memory/paging.h>
 #include <asm/paging_info.h>
 #include <core/console.h>
+#include <core/panic.h>
 #include <memory/pmm.h>
 #include <memory/vmm.h>
-#include <core/panic.h>
 
 #define CHECK(condition)                                                       \
   do {                                                                         \
@@ -59,7 +60,7 @@ static void asid_test(uintptr_t master) {
   CHECK(*(volatile uint64_t*)alias == 0x1111);
   arch_paging_switch_space(master, 0);
 
-  arch_paging_destroy_space(first);
+  arch_paging_destroy_space(first, first_tag);
   arch_paging_release_tag(first_tag);
   size_t replacement_tag = arch_paging_alloc_tag();
   CHECK(replacement_tag == first_tag);
@@ -72,9 +73,14 @@ static void asid_test(uintptr_t master) {
   CHECK(*(volatile uint64_t*)alias == 0x3333);
   arch_paging_switch_space(master, 0);
 
-  arch_paging_destroy_space(second);
+  // Invalidation of first_tag must not have disturbed second_tag translations.
+  arch_paging_switch_space(second, second_tag);
+  CHECK(*(volatile uint64_t*)alias == 0x2222);
+  arch_paging_switch_space(master, 0);
+
+  arch_paging_destroy_space(second, second_tag);
   arch_paging_release_tag(second_tag);
-  arch_paging_destroy_space(replacement);
+  arch_paging_destroy_space(replacement, replacement_tag);
   arch_paging_release_tag(replacement_tag);
   CHECK(pmm_free(first_frame, 1) == PMM_OK);
   CHECK(pmm_free(second_frame, 1) == PMM_OK);
@@ -86,12 +92,16 @@ void paging_test(void) {
   unsigned permissions;
   struct page_status status;
   uintptr_t master = vmm_get_kernel_space()->root_phys;
+  // Verify CPU feature queries
+  (void)arch_cpu_has_feature(CPU_FEATURE_HW_PAGING_AD);
+  CHECK(!arch_cpu_has_feature(CPU_FEATURE_MAX));
+
   // Verify W^X permissions on kernel segments
   CHECK(arch_paging_query(master, (uintptr_t)text_start, &phys, &permissions) ==
         PAGING_OK);
   CHECK(permissions == (PAGE_READ | PAGE_EXEC));
-  CHECK(arch_paging_query(master, (uintptr_t)rodata_start, &phys, &permissions) ==
-        PAGING_OK);
+  CHECK(arch_paging_query(master, (uintptr_t)rodata_start, &phys,
+                          &permissions) == PAGING_OK);
   CHECK(permissions == PAGE_READ);
   CHECK(arch_paging_query(master, (uintptr_t)data_start, &phys, &permissions) ==
         PAGING_OK);
@@ -145,7 +155,7 @@ void paging_test(void) {
   CHECK(level_at(root, 2 * GIB) == 0);
   CHECK(level_at(root, 2 * GIB + 4096) == -1);
   CHECK(level_at(root, 2 * GIB + 8192) == 0);
-  arch_paging_destroy_space(root);
+  arch_paging_destroy_space(root, 0);
 
   CHECK(arch_paging_create_space(&root) == PAGING_OK);
   // Existing branches force smaller leaves even for an aligned large request.
@@ -173,7 +183,7 @@ void paging_test(void) {
   CHECK(level_at(root, alias + 4096) == -1);
   arch_paging_switch_space(master, 0);
   CHECK(pmm_free(frame, 1) == PMM_OK);
-  arch_paging_destroy_space(root);
+  arch_paging_destroy_space(root, 0);
   asid_test(master);
   console_log("paging_test",
               "Large-page mapping and partial unmap tests passed.\n");

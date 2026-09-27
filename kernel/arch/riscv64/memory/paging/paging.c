@@ -2,7 +2,6 @@
 
 #include <arch/cpu.h>
 #include <arch/memory/layout.h>
-#include <asm/hw_features.h>
 #include <asm/paging_info.h>
 #include <common/memory.h>
 #include <core/panic.h>
@@ -240,12 +239,12 @@ static int create_space_locked(phys_addr_t* out_root) {
   return PAGING_OK;
 }
 
-static void destroy_space_locked(phys_addr_t root) {
+static void destroy_space_locked(phys_addr_t root, size_t tag) {
   if (root == 0 || root == master_kernel_root) {
     return;
   }
 
-  arch_paging_flush_all();
+  arch_paging_flush_tag(tag);
 
   uint64_t* table2 = (uint64_t*)arch_phys_to_virt(root);
 
@@ -274,7 +273,6 @@ static void destroy_space_locked(phys_addr_t root) {
   }
 
   pmm_free(root, 1);
-  arch_paging_flush_all();
 }
 
 static void switch_space_locked(phys_addr_t root, size_t tag) {
@@ -313,7 +311,7 @@ static int map_leaf(phys_addr_t root, virt_addr_t virt, phys_addr_t phys,
   }
 
   // Handle Svadu (hardware A/D update) vs non-Svadu (software / Svade)
-  if (arch_has_svadu()) {
+  if (arch_cpu_has_feature(CPU_FEATURE_HW_PAGING_AD)) {
     if (!(permissions & PAGE_USER)) {
       // For kernel pages, pre-set Accessed (and Dirty if writable) to avoid
       // unnecessary atomic bus writes on permanent kernel mappings.
@@ -629,9 +627,9 @@ int arch_paging_create_space(phys_addr_t* out_root) {
   return result;
 }
 
-void arch_paging_destroy_space(phys_addr_t root) {
+void arch_paging_destroy_space(phys_addr_t root, size_t tag) {
   bool irq = spin_lock_irqsave(&paging_lock);
-  destroy_space_locked(root);
+  destroy_space_locked(root, tag);
   spin_unlock_irqrestore(&paging_lock, irq);
 }
 

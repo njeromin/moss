@@ -46,7 +46,7 @@ int arch_paging_create_space(phys_addr_t* out_root);
 
 // Free an address space and its non-kernel intermediate page tables.
 // Caller must first switch every hart away and prevent further use of this root.
-void arch_paging_destroy_space(phys_addr_t root);
+void arch_paging_destroy_space(phys_addr_t root, size_t tag);
 
 // Probe the local CPU's ASID support. The boot CPU establishes the policy;
 // later CPUs must support at least that width.
@@ -107,6 +107,9 @@ void arch_paging_flush_page(virt_addr_t virt);
 
 // Invalidate all TLB entries (used when switching address spaces or tearing down a space)
 void arch_paging_flush_all(void);
+
+// Invalidate all TLB entries for a specific address space tag across all harts.
+void arch_paging_flush_tag(size_t tag);
 
 // Serialise an entire unmap range against mapping/query operations. Partial
 // failure semantics match repeated unmaps; prior changes are not rolled back.

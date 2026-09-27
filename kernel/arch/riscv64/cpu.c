@@ -1,7 +1,6 @@
 #include <arch/cpu.h>
-#include <asm/hw_features.h>  // Needed as this implements arch_has_svadu()
-
 #include <arch/memory/paging.h>
+#include <arch/timer.h>
 #include <arch/trap.h>
 #include <core/console.h>
 #include <core/panic.h>
@@ -16,11 +15,42 @@ struct cpu_features {
   bool svadu_enabled;
   bool double_trap_enabled;
   bool landing_pad_enabled;
+  bool shadow_stack_enabled;
+  bool unaligned_access_delegated;
+  bool fpu_enabled;
+  bool vector_enabled;
 };
 
 static struct cpu_features features;
 
 static void configure_cpu_features(void) {
+  if (!features.probed) {
+    uint64_t orig_sstatus;
+    __asm__ volatile("csrr %0, sstatus" : "=r"(orig_sstatus));
+
+    // Probe Floating-point Unit (FS field bits 14:13)
+    __asm__ volatile("csrs sstatus, %0" : : "r"(3ULL << 13));
+    uint64_t test_sstatus;
+    __asm__ volatile("csrr %0, sstatus" : "=r"(test_sstatus));
+    features.fpu_enabled = (((test_sstatus >> 13) & 3ULL) != 0);
+
+    // Probe Vector extension (VS field bits 10:9)
+    __asm__ volatile("csrs sstatus, %0" : : "r"(3ULL << 9));
+    __asm__ volatile("csrr %0, sstatus" : "=r"(test_sstatus));
+    features.vector_enabled = (((test_sstatus >> 9) & 3ULL) != 0);
+
+    // Restore original sstatus
+    __asm__ volatile("csrw sstatus, %0" : : "r"(orig_sstatus));
+
+    if (features.fpu_enabled) {
+      console_log(_CONSOLE_LOG_SUBJECT, "FPU detected (sstatus.FS).\n");
+    }
+    if (features.vector_enabled) {
+      console_log(_CONSOLE_LOG_SUBJECT,
+                  "Vector extension detected (sstatus.VS).\n");
+    }
+  }
+
   if (!features.has_fwft) {
     return;
   }
@@ -50,6 +80,7 @@ static void configure_cpu_features(void) {
   // Misaligned Exception Delegation
   struct sbi_ret ret = sbi_fwft_set(SBI_FWFT_MISALIGNED_EXC_DELEG, 1, 0);
   if (!features.probed && ret.error == SBI_SUCCESS) {
+    features.unaligned_access_delegated = true;
     console_log(_CONSOLE_LOG_SUBJECT,
                 "Delegated misaligned access exceptions to S-mode.\n");
   }
@@ -90,6 +121,17 @@ static void configure_cpu_features(void) {
                   "Enabled U-mode landing pad enforcement (senvcfg.LPE).\n");
     }
   }
+
+  // Shadow Stack (Zicfiss)
+  if (!features.probed) {
+    ret = sbi_fwft_set(SBI_FWFT_SHADOW_STACK, 1, 0);
+    if (ret.error == SBI_SUCCESS) {
+      features.shadow_stack_enabled = true;
+      console_log(_CONSOLE_LOG_SUBJECT, "Enabled Shadow Stack (Zicfiss).\n");
+    }
+  } else if (features.shadow_stack_enabled) {
+    sbi_fwft_set(SBI_FWFT_SHADOW_STACK, 1, 0);
+  }
 }
 
 void arch_cpu_init(cpu_hardware_id_t hart_id) {
@@ -116,12 +158,29 @@ void arch_cpu_init(cpu_hardware_id_t hart_id) {
   features.probed = true;
 }
 
-bool arch_has_svadu(void) {
-  return features.svadu_enabled;
-}
-
-bool arch_has_landing_pad(void) {
-  return features.landing_pad_enabled;
+bool arch_cpu_has_feature(enum cpu_feature feature) {
+  switch (feature) {
+    case CPU_FEATURE_FPU:
+      return features.fpu_enabled;
+    case CPU_FEATURE_VECTOR:
+      return features.vector_enabled;
+    case CPU_FEATURE_HW_PAGING_AD:
+      return features.svadu_enabled;
+    case CPU_FEATURE_LANDING_PAD:
+      return features.landing_pad_enabled;
+    case CPU_FEATURE_SHADOW_STACK:
+      return features.shadow_stack_enabled;
+    case CPU_FEATURE_DOUBLE_TRAP:
+      return features.double_trap_enabled;
+    case CPU_FEATURE_TIMER_DIRECT:
+      return arch_timer_has_direct();
+    case CPU_FEATURE_HART_SUSPEND:
+      return features.has_hsm;
+    case CPU_FEATURE_UNALIGNED_ACCESS:
+      return features.unaligned_access_delegated;
+    default:
+      return false;
+  }
 }
 
 #define SSTATUS_SIE (1ULL << 1)

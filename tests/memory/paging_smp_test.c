@@ -1,11 +1,11 @@
 // Test-only HSM startup; the production kernel still boots a single hart.
-#include "sbi.h"
 #include <arch/memory/layout.h>
 #include <arch/memory/paging.h>
 #include <arch/trap.h>
 #include <core/console.h>
-#include <memory/pmm.h>
 #include <core/panic.h>
+#include <memory/pmm.h>
+#include "sbi.h"
 
 #define CHECK(c)                                                               \
   do {                                                                         \
@@ -98,7 +98,7 @@ void paging_smp_test(void) {
   while (sbi_hart_get_status(hart).value != 1) {
     __asm__ volatile("nop");
   }
-  arch_paging_destroy_space(test_root);
+  arch_paging_destroy_space(test_root, 0);
   CHECK(pmm_free(first, 1) == PMM_OK);
   CHECK(pmm_free(second, 1) == PMM_OK);
   console_log("paging_test",

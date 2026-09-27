@@ -208,8 +208,9 @@ lock and full flushes favor correctness over parallel throughput.
 The boot CPU probes its implemented ASID width, and secondaries must support at
 least that many bits. Each VMM space owns an allocated nonzero ASID when one is
 available; ASID zero is the fallback and is fenced on every root switch. After
-all harts switch away, destroying a space completes an all-hart TLB flush before
-its ASID is released for reuse. The kernel space uses ASID zero.
+all harts switch away, destroying a space completes a targeted all-hart TLB flush
+for its ASID via OpenSBI RFENCE before its ASID is released for reuse (ASID zero
+falls back to an all-ASID shootdown). The kernel space uses ASID zero.
 
 Callers must retain ownership of roots and data frames: a translation query does
 not pin a frame, and destroying a space requires every hart to have switched away

@@ -40,3 +40,19 @@ void arch_paging_flush_page(virt_addr_t virt) {
   // and large leaves as well as base pages.
   arch_paging_flush_all();
 }
+
+void arch_paging_flush_tag(size_t tag) {
+  if (tag == 0) {
+    arch_paging_flush_all();
+    return;
+  }
+
+  __asm__ volatile("fence rw, rw\n\tsfence.vma zero, %0"
+                   :
+                   : "r"(tag)
+                   : "memory");
+  struct sbi_ret result = sbi_remote_sfence_vma_asid(0, ~0UL, 0, ~0UL, tag);
+  if (result.error != SBI_SUCCESS) {
+    kpanic("SBI TLB shootdown failed (%ld)", result.error);
+  }
+}

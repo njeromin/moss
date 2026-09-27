@@ -5,16 +5,16 @@
  kernel/arch/riscv64/memory/paging/paging.c common/memory.c \
  -o /tmp/concurrent_paging_test && /tmp/concurrent_paging_test
  */
-#include <arch/cpu.h>
-#include <arch/memory/paging.h>
 #include <assert.h>
-#include <memory/boot_alloc.h>
-#include <memory/pmm.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <arch/cpu.h>
+#include <arch/memory/paging.h>
+#include <memory/boot_alloc.h>
+#include <memory/pmm.h>
 
 #define THREADS 8
 #define ROUNDS 1000
@@ -39,8 +39,11 @@ void arch_interrupts_enable(void) {
   interrupts = true;
 }
 
-bool arch_has_svadu(void) {
-  return true;
+bool arch_cpu_has_feature(enum cpu_feature feature) {
+  if (feature == CPU_FEATURE_HW_PAGING_AD) {
+    return true;
+  }
+  return false;
 }
 
 uintptr_t arch_phys_to_virt(uintptr_t phys) {
@@ -60,6 +63,11 @@ void arch_paging_flush_all(void) {
 
 void arch_paging_flush_page(uintptr_t virt) {
   (void)virt;
+  arch_paging_flush_all();
+}
+
+void arch_paging_flush_tag(size_t tag) {
+  (void)tag;
   arch_paging_flush_all();
 }
 
@@ -189,6 +197,6 @@ int main(void) {
   assert(arch_paging_query(root, (4ULL << 30) + THREADS * 4096, &phys, NULL) ==
          PAGING_OK);
   assert(phys == THREADS * 4096);
-  arch_paging_destroy_space(other);
+  arch_paging_destroy_space(other, 0);
   puts("Concurrent PMM and paging tests passed (8 writers, 1 reader).");
 }
