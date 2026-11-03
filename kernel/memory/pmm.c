@@ -307,13 +307,13 @@ static enum pmm_result find_free_run(const struct pmm_region* region,
     cursor = 0;
   }
 
-  // First pass: search from cursor to the end of the region
+  // Search from cursor to the end of the region
   if (find_free_run_in_range(region, requested_frames, cursor,
                              region->frame_count, first_frame) == PMM_OK) {
     return PMM_OK;
   }
 
-  // Second pass: wrap around from 0 to cursor
+  // Wrap around from 0 to cursor
   if (cursor > 0) {
     size_t wrap_end = cursor + requested_frames - 1;
     if (wrap_end > region->frame_count) {
@@ -423,6 +423,67 @@ enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr) {
   enum pmm_result result = pmm_alloc_locked(frames, out_ptr);
   spin_unlock_irqrestore(&pmm_lock, irq);
   return result;
+}
+
+enum pmm_result pmm_alloc_in_range(size_t frames, uintptr_t start,
+                                   uintptr_t end, size_t alignment,
+                                   uintptr_t* out_ptr) {
+  if (out_ptr == NULL || frames == 0 || start >= end ||
+      alignment < PMM_FRAME_SIZE || (alignment & (alignment - 1)) != 0 ||
+      frames > (end - start) / PMM_FRAME_SIZE) {
+    return PMM_ERROR_INVALID_INPUT;
+  }
+
+  *out_ptr = 0;
+  bool irq = spin_lock_irqsave(&pmm_lock);
+
+  for (size_t i = 0; i < pmm.region_count; ++i) {
+    struct pmm_region* region = &pmm.regions[i];
+    if (region->frame_count > (UINTPTR_MAX - region->base) / PMM_FRAME_SIZE) {
+      continue;
+    }
+
+    uintptr_t region_end = region->base + region->frame_count * PMM_FRAME_SIZE;
+    uintptr_t lower = start > region->base ? start : region->base;
+    uintptr_t upper = end < region_end ? end : region_end;
+    if (lower > UINTPTR_MAX - (PMM_FRAME_SIZE - 1)) {
+      continue;
+    }
+    lower = align_up(lower, PMM_FRAME_SIZE);
+    upper = align_down(upper, PMM_FRAME_SIZE);
+    if (lower >= upper || frames > (upper - lower) / PMM_FRAME_SIZE) {
+      continue;
+    }
+
+    size_t first = (lower - region->base) / PMM_FRAME_SIZE;
+    size_t limit = (upper - region->base) / PMM_FRAME_SIZE;
+    for (size_t frame = first; frame <= limit - frames;) {
+      uintptr_t phys = region->base + frame * PMM_FRAME_SIZE;
+      if ((phys & (alignment - 1)) != 0) {
+        ++frame;
+        continue;
+      }
+
+      size_t free_count = 0;
+      while (free_count < frames &&
+             frame_state(region->bitmap, frame + free_count) ==
+                 PMM_FRAME_FREE) {
+        ++free_count;
+      }
+      if (free_count == frames) {
+        for (size_t j = 0; j < frames; ++j) {
+          set_frame_state(region->bitmap, frame + j, PMM_FRAME_ALLOCATED);
+        }
+        *out_ptr = phys;
+        spin_unlock_irqrestore(&pmm_lock, irq);
+        return PMM_OK;
+      }
+      frame += free_count + 1;
+    }
+  }
+
+  spin_unlock_irqrestore(&pmm_lock, irq);
+  return PMM_ERROR_NO_FREE_FRAME;
 }
 
 enum pmm_result pmm_free(uintptr_t base, size_t frames) {

@@ -17,6 +17,8 @@ enum cap_type {
   CAP_TYPE_VSPACE,
   CAP_TYPE_FRAME,
   CAP_TYPE_CNODE,
+  CAP_TYPE_DMA_CONTEXT,
+  CAP_TYPE_DMA_BUFFER,
 };
 
 enum cap_rights {

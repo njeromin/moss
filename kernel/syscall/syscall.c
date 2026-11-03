@@ -9,6 +9,7 @@
 #include <common/memory.h>
 #include <common/syscall.h>
 #include <core/console.h>
+#include <dma/dma.h>
 #include <ipc/channel.h>
 #include <memory/pmm.h>
 #include <memory/vmm.h>
@@ -119,6 +120,130 @@ void syscall_handler(size_t syscall_num,
         pmm_free(phys, count);
 
         *ret0 = (trap_register_t)SYS_OK;
+        break;
+      }
+
+    case SYSCALL_DMA_BUFFER_ALLOC:
+      {
+        if (cnode == NULL || caller_proc == NULL) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        cap_ptr_t context_slot = (cap_ptr_t)args[0];
+        size_t size = (size_t)args[1];
+        size_t alignment = (size_t)args[2];
+        virt_addr_t user_vaddr = (virt_addr_t)args[3];
+        cap_ptr_t out_slot = (cap_ptr_t)args[4];
+
+        if (size == 0 || size > SIZE_MAX - (PAGE_SIZE - 1) ||
+            (user_vaddr & PAGE_MASK) != 0 || user_vaddr < PAGE_SIZE ||
+            user_vaddr >= USER_STACK_TOP) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        size_t map_size = (size + PAGE_SIZE - 1) & ~(size_t)PAGE_MASK;
+        if (map_size > USER_STACK_TOP - user_vaddr) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        struct capability cap_context;
+        int lookup_res = cap_table_lookup(cnode, context_slot,
+                                          CAP_TYPE_DMA_CONTEXT, CAP_RIGHT_WRITE,
+                                          &cap_context);
+        if (lookup_res != SYS_OK) {
+          *ret0 = (trap_register_t)lookup_res;
+          break;
+        }
+
+        struct dma_buffer* buffer = NULL;
+        enum dma_result dma_res = dma_alloc_coherent(
+            (struct dma_ctx*)cap_context.object, size, alignment, &buffer);
+        if (dma_res != DMA_OK) {
+          *ret0 = dma_res == DMA_ERROR_NO_MEMORY
+                      ? (trap_register_t)SYS_ERR_NO_MEM
+                      : dma_res == DMA_ERROR_BUSY
+                            ? (trap_register_t)SYS_ERR_BUSY
+                            : dma_res == DMA_ERROR_UNSUPPORTED
+                                  ? (trap_register_t)SYS_ERR_UNSUPPORTED
+                                  : (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        if (vmm_map(&caller_proc->memory_space, user_vaddr,
+                    dma_buffer_phys_addr(buffer), map_size,
+                    PAGE_USER | PAGE_READ | PAGE_WRITE) != VMM_OK) {
+          dma_free_coherent(buffer);
+          *ret0 = (trap_register_t)SYS_ERR_ALREADY_MAPPED;
+          break;
+        }
+
+        struct capability cap_buffer = {
+            .type = CAP_TYPE_DMA_BUFFER,
+            .rights = CAP_RIGHT_READ | CAP_RIGHT_WRITE,
+            .badge = user_vaddr,
+            .object = buffer,
+        };
+        cap_ptr_t assigned_slot = 0;
+        int insert_res =
+            cap_table_insert(cnode, out_slot, &cap_buffer, &assigned_slot);
+        if (insert_res != SYS_OK) {
+          vmm_unmap(&caller_proc->memory_space, user_vaddr, map_size);
+          dma_free_coherent(buffer);
+          *ret0 = (trap_register_t)insert_res;
+          break;
+        }
+
+        *ret0 = (trap_register_t)SYS_OK;
+        if (ret1 != NULL) {
+          *ret1 = (trap_register_t)assigned_slot;
+        }
+        break;
+      }
+
+    case SYSCALL_DMA_BUFFER_FREE:
+    case SYSCALL_DMA_BUFFER_INFO:
+      {
+        if (cnode == NULL || caller_proc == NULL) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+
+        cap_ptr_t buffer_slot = (cap_ptr_t)args[0];
+        uint8_t required_rights = syscall_num == SYSCALL_DMA_BUFFER_FREE
+                                      ? CAP_RIGHT_WRITE
+                                      : CAP_RIGHT_READ;
+        struct capability cap_buffer;
+        int lookup_res = cap_table_lookup(cnode, buffer_slot,
+                                          CAP_TYPE_DMA_BUFFER, required_rights,
+                                          &cap_buffer);
+        if (lookup_res != SYS_OK) {
+          *ret0 = (trap_register_t)lookup_res;
+          break;
+        }
+
+        struct dma_buffer* buffer = (struct dma_buffer*)cap_buffer.object;
+        if (syscall_num == SYSCALL_DMA_BUFFER_INFO) {
+          *ret0 = (trap_register_t)SYS_OK;
+          if (ret1 != NULL) {
+            *ret1 = (trap_register_t)dma_buffer_device_addr(buffer);
+          }
+          break;
+        }
+
+        size_t map_size = dma_buffer_allocation_size(buffer);
+        if (vmm_unmap(&caller_proc->memory_space, (virt_addr_t)cap_buffer.badge,
+                      map_size) != VMM_OK) {
+          *ret0 = (trap_register_t)SYS_ERR_INVALID_ARG;
+          break;
+        }
+        if (dma_free_coherent(buffer) != DMA_OK) {
+          *ret0 = (trap_register_t)SYS_ERR_BUSY;
+          break;
+        }
+        *ret0 = (trap_register_t)cap_table_delete(cnode, buffer_slot);
         break;
       }
 
@@ -737,6 +862,18 @@ void syscall_handler(size_t syscall_num,
         uint8_t rights_mask = (uint8_t)args[3];
         uint64_t badge = (uint64_t)args[4];
 
+        struct capability source_cap;
+        int source_res = cap_table_lookup(cnode, src_slot, CAP_TYPE_NONE, 0,
+                                          &source_cap);
+        if (source_res != SYS_OK) {
+          *ret0 = (trap_register_t)source_res;
+          break;
+        }
+        if (source_cap.type == CAP_TYPE_DMA_BUFFER) {
+          *ret0 = (trap_register_t)SYS_ERR_RIGHTS;
+          break;
+        }
+
         struct capability_table* dest_table = cnode;
         if (dest_cnode_slot != 0 && dest_cnode_slot != CAP_SLOT_CNODE) {
           struct capability cap_cnode;
@@ -772,6 +909,16 @@ void syscall_handler(size_t syscall_num,
         if (cap_table_lookup(cnode, slot, CAP_TYPE_NONE, 0, &cap) == SYS_OK) {
           if (cap.type == CAP_TYPE_CHANNEL && cap.object != NULL) {
             channel_endpoint_close((struct channel_endpoint*)cap.object);
+          } else if (cap.type == CAP_TYPE_DMA_BUFFER &&
+                     caller_proc != NULL && cap.object != NULL) {
+            struct dma_buffer* buffer = (struct dma_buffer*)cap.object;
+            if (vmm_unmap(&caller_proc->memory_space,
+                          (virt_addr_t)cap.badge,
+                          dma_buffer_allocation_size(buffer)) != VMM_OK ||
+                dma_free_coherent(buffer) != DMA_OK) {
+              *ret0 = (trap_register_t)SYS_ERR_BUSY;
+              break;
+            }
           }
         }
         int del_res = cap_table_delete(cnode, slot);

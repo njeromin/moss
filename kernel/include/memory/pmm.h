@@ -43,4 +43,9 @@ enum pmm_result pmm_init(void);
 // Allocation/free are serialised and preserve the caller's interrupt state.
 // Callers must remove mappings and finish shootdowns before freeing data frames.
 enum pmm_result pmm_alloc(size_t frames, uintptr_t* out_ptr);
+// Allocate contiguous frames wholly inside [start, end), with a physical base
+// aligned to alignment (a power of two, at least PMM_FRAME_SIZE).
+enum pmm_result pmm_alloc_in_range(size_t frames, uintptr_t start,
+                                   uintptr_t end, size_t alignment,
+                                   uintptr_t* out_ptr);
 enum pmm_result pmm_free(uintptr_t base, size_t frames);

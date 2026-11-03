@@ -7,7 +7,7 @@ if(NOT DEFINED INITRAMFS)
     endif()
 endif()
 
-set(args -machine virt -cpu rv64,ssdbltrp=true,smdbltrp=true,zicfilp=true -m 8192M -smp 4 -bios default
+set(args -machine virt -cpu rv64,ssdbltrp=true,smdbltrp=true,zicfilp=true -m 8192M -smp 6 -bios default
     -kernel "${KERNEL_ELF}")
 if(INITRAMFS)
     list(APPEND args -initrd "${INITRAMFS}")

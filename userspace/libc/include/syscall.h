@@ -119,6 +119,34 @@ static inline int sys_frame_free(uint32_t frame_slot) {
   return (int)_syscall1(SYSCALL_FRAME_FREE, (long)frame_slot);
 }
 
+static inline int sys_dma_buffer_alloc(uint32_t context_slot, size_t size,
+                                       size_t alignment, uintptr_t user_vaddr,
+                                       uint32_t out_slot,
+                                       uint32_t* assigned_slot) {
+  long r1 = 0;
+  long res = _syscall5(SYSCALL_DMA_BUFFER_ALLOC, (long)context_slot,
+                       (long)size, (long)alignment, (long)user_vaddr,
+                       (long)out_slot, &r1);
+  if (res == SYS_OK && assigned_slot != NULL) {
+    *assigned_slot = (uint32_t)r1;
+  }
+  return (int)res;
+}
+
+static inline int sys_dma_buffer_free(uint32_t buffer_slot) {
+  return (int)_syscall1(SYSCALL_DMA_BUFFER_FREE, (long)buffer_slot);
+}
+
+static inline int sys_dma_buffer_info(uint32_t buffer_slot,
+                                      uint64_t* device_addr) {
+  long r1 = 0;
+  long res = _syscall2(SYSCALL_DMA_BUFFER_INFO, (long)buffer_slot, 0, &r1);
+  if (res == SYS_OK && device_addr != NULL) {
+    *device_addr = (uint64_t)r1;
+  }
+  return (int)res;
+}
+
 static inline int sys_vspace_create(uint32_t out_slot,
                                     uint32_t* assigned_slot) {
   long r1 = 0;

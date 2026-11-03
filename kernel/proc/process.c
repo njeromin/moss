@@ -1,6 +1,7 @@
 #include <proc/process.h>
 
 #include <common/memory.h>
+#include <dma/dma.h>
 #include <ipc/channel.h>
 #include <memory/kmem_cache.h>
 #include <proc/capabilities.h>
@@ -46,6 +47,16 @@ void process_destroy(struct process* proc) {
           (struct channel_endpoint*)proc->capabilities.slots[i].object);
       proc->capabilities.slots[i].type = CAP_TYPE_NONE;
       proc->capabilities.slots[i].object = NULL;
+    } else if (proc->capabilities.slots[i].type == CAP_TYPE_DMA_BUFFER &&
+               proc->capabilities.slots[i].object != NULL) {
+      struct capability* cap = &proc->capabilities.slots[i];
+      struct dma_buffer* buffer = (struct dma_buffer*)cap->object;
+      if (vmm_unmap(&proc->memory_space, (virt_addr_t)cap->badge,
+                    dma_buffer_allocation_size(buffer)) == VMM_OK) {
+        dma_free_coherent(buffer);
+      }
+      cap->type = CAP_TYPE_NONE;
+      cap->object = NULL;
     }
   }
 

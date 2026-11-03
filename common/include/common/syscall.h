@@ -47,6 +47,11 @@
 #define SYSCALL_CAP_COPY 0x41
 #define SYSCALL_CAP_DELETE 0x42
 
+// DMA Syscalls
+#define SYSCALL_DMA_BUFFER_ALLOC 0x50
+#define SYSCALL_DMA_BUFFER_FREE 0x51
+#define SYSCALL_DMA_BUFFER_INFO 0x52
+
 // Syscall Error Codes
 enum syscall_error {
   SYS_OK = 0,
@@ -61,6 +66,8 @@ enum syscall_error {
   SYS_ERR_WOULD_BLOCK = -9,
   SYS_ERR_BUFFER_TOO_SMALL = -10,
   SYS_ERR_TIMED_OUT = -11,
+  SYS_ERR_UNSUPPORTED = -12,
+  SYS_ERR_BUSY = -13,
 };
 
 // Reserved Initial Capability Slots
@@ -78,4 +85,3 @@ enum syscall_error {
 #define PROT_WRITE (1u << 1)
 #define PROT_EXEC (1u << 2)
 #define PROT_USER (1u << 3)
-
